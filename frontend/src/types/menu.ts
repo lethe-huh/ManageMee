@@ -11,6 +11,7 @@ export interface MenuItem {
   price: number;
   ingredients: RecipeIngredient[];
   category: string;
+  image?: string; // Optional image URL or data URL
 }
 
 export interface SaleRecord {

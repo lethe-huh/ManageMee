@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Save, Plus, Trash2 } from 'lucide-react';
+import { X, Save, Plus, Trash2, Edit2 } from 'lucide-react';
 import { MenuItem, RecipeIngredient } from '../types/menu';
 import { inventoryItems } from '../data/mockData';
 
@@ -7,16 +7,30 @@ interface EditMenuItemProps {
   item?: MenuItem | null;
   onSave: (item: MenuItem) => void;
   onCancel: () => void;
+  onDelete?: (id: string) => void;
 }
 
-export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemProps) {
+export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditMenuItemProps) {
   const [dishName, setDishName] = useState(item?.name || '');
   const [dishType, setDishType] = useState(item?.category || 'Rice Dishes');
-  const [price, setPrice] = useState(item?.price?.toString() || '');
+  const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
+  const [dishImage, setDishImage] = useState<string | undefined>(item?.image);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
     item?.ingredients || []
   );
   const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDishImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSave = () => {
     const menuItem: MenuItem = {
@@ -24,7 +38,8 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
       name: dishName,
       price: parseFloat(price),
       category: dishType,
-      ingredients: ingredients
+      ingredients: ingredients,
+      image: dishImage
     };
     onSave(menuItem);
   };
@@ -104,7 +119,7 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
       {/* Header */}
       <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10">
         <h1 className="text-2xl font-bold text-gray-900">
-          {item ? `Edit Dish: ${item.name}` : 'Add New Dish'}
+          {item ? `Edit Dish` : 'Add New Dish'}
         </h1>
         <button
           onClick={onCancel}
@@ -117,7 +132,45 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
       <div className="p-4 pb-24">
         {/* Top Section: Basic Info */}
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Basic Information</h2>
+          
+          {/* Dish Image Upload */}
+          <div className="mb-4">
+            <label className="block text-gray-900 font-bold mb-2 text-lg">
+              Dish Photo
+            </label>
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+                id="dish-image-upload"
+              />
+              <label
+                htmlFor="dish-image-upload"
+                className="inline-block cursor-pointer"
+              >
+                {dishImage ? (
+                  <div className="relative w-24 h-24 rounded-lg border-2 border-gray-300 overflow-hidden group">
+                    <img
+                      src={dishImage}
+                      alt="Dish preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-active:bg-opacity-30 transition-all flex items-center justify-center">
+                      <div className="bg-white rounded-full p-2 opacity-0 group-active:opacity-100 transition-opacity">
+                        <Edit2 size={20} strokeWidth={2.5} className="text-gray-900" />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center active:bg-gray-200 transition-colors">
+                    <Plus size={32} strokeWidth={2.5} className="text-gray-600" />
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
           
           {/* Dish Name */}
           <div className="mb-4">
@@ -136,9 +189,7 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
 
           {/* Dish Type */}
           <div className="mb-4">
-            <label className="block text-gray-900 font-bold mb-2 text-lg">
-              Dish Type *
-            </label>
+            <label className="block text-gray-900 font-bold mb-2 text-lg">Category *</label>
             <select
               value={dishType}
               onChange={(e) => setDishType(e.target.value)}
@@ -156,18 +207,27 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
 
           {/* Selling Price */}
           <div>
-            <label className="block text-gray-900 font-bold mb-2 text-lg">
-              Selling Price (SGD) *
-            </label>
+            <label className="block text-gray-900 font-bold mb-2 text-lg">Selling Price *</label>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-600">$</span>
               <input
-                type="number"
+                type="text"
                 required
-                step="0.10"
-                min="0"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow only numbers and one decimal point
+                  if (/^\d*\.?\d{0,2}$/.test(value) || value === '') {
+                    setPrice(value);
+                  }
+                }}
+                onBlur={(e) => {
+                  // Format to 2 decimal places on blur
+                  const value = e.target.value;
+                  if (value && !isNaN(parseFloat(value))) {
+                    setPrice(parseFloat(value).toFixed(2));
+                  }
+                }}
                 placeholder="0.00"
                 className="w-full pl-12 pr-4 py-4 border-2 border-gray-300 rounded-lg font-bold text-2xl focus:outline-none focus:border-orange-600"
               />
@@ -179,83 +239,95 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
         <div className="mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-3">Ingredients per Portion</h2>
           
-          {/* Ingredients List */}
-          <div className="space-y-3 mb-4">
-            {ingredients.map((ingredient, index) => (
-              <div
-                key={index}
-                className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4"
-              >
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="flex-1">
-                    <p className="font-bold text-gray-900 text-lg">{ingredient.inventoryItemName}</p>
+          {/* Gray container for ingredients and add button */}
+          <div className="bg-gray-100 border-2 border-gray-300 rounded-lg p-3">
+            {/* Ingredients List */}
+            <div className="space-y-2 mb-3">
+              {ingredients.map((ingredient, index) => (
+                <div
+                  key={index}
+                  className="bg-white border-2 border-gray-300 rounded-lg p-3"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="font-bold text-gray-900">{ingredient.inventoryItemName}</p>
+                    <button
+                      onClick={() => removeIngredient(index)}
+                      className="text-red-600 p-1 active:bg-red-100 rounded-lg transition-colors"
+                    >
+                      <Trash2 size={20} strokeWidth={2.5} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => removeIngredient(index)}
-                    className="text-red-600 p-2 active:bg-red-100 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={24} strokeWidth={2.5} />
-                  </button>
+                  
+                  {/* Quantity Input */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={ingredient.quantity || ''}
+                        onChange={(e) => updateIngredientQuantity(index, e.target.value)}
+                        placeholder="0"
+                        className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-xl focus:outline-none focus:border-orange-600 text-center"
+                      />
+                    </div>
+                    <div className="bg-orange-100 text-orange-600 px-3 py-3 rounded-lg font-bold min-w-[60px] text-center">
+                      {ingredient.unit}
+                    </div>
+                  </div>
                 </div>
-                
-                {/* Quantity Input */}
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={ingredient.quantity || ''}
-                      onChange={(e) => updateIngredientQuantity(index, e.target.value)}
-                      placeholder="0"
-                      className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-2xl focus:outline-none focus:border-orange-600 text-center"
-                    />
-                  </div>
-                  <div className="bg-orange-100 text-orange-600 px-4 py-4 rounded-lg font-bold text-xl min-w-[80px] text-center">
-                    {ingredient.unit}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Add Ingredient Button */}
-          {showAddIngredient ? (
-            <div className="bg-white border-2 border-orange-600 rounded-lg p-4">
-              <p className="font-bold text-gray-900 mb-3">Select Ingredient:</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {availableItems.map(inv => (
-                  <button
-                    key={inv.id}
-                    onClick={() => addIngredient(inv.id)}
-                    className="w-full bg-gray-50 border-2 border-gray-300 rounded-lg p-3 text-left font-bold text-gray-900 active:bg-orange-50 active:border-orange-600 transition-colors"
-                  >
-                    {inv.name}   ({inv.category})
-                  </button>
-                ))}
-                {availableItems.length === 0 && (
-                  <p className="text-gray-600 font-bold text-center py-4">
-                    All inventory items added
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setShowAddIngredient(false)}
-                className="w-full mt-3 bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
+              ))}
             </div>
-          ) : (
-            <button
-              onClick={() => setShowAddIngredient(true)}
-              className="w-full bg-gray-900 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-gray-800 transition-colors"
-            >
-              <Plus size={28} strokeWidth={2.5} />
-              Add Ingredient
-            </button>
-          )}
+
+            {/* Add Ingredient Button */}
+            {showAddIngredient ? (
+              <div className="bg-white border-2 border-orange-600 rounded-lg p-4">
+                <p className="font-bold text-gray-900 mb-3">Select Ingredient:</p>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {availableItems.map(inv => (
+                    <button
+                      key={inv.id}
+                      onClick={() => addIngredient(inv.id)}
+                      className="w-full bg-gray-50 border-2 border-gray-300 rounded-lg p-3 text-left font-bold text-gray-900 active:bg-orange-50 active:border-orange-600 transition-colors"
+                    >
+                      {inv.name}   ({inv.category})
+                    </button>
+                  ))}
+                  {availableItems.length === 0 && (
+                    <p className="text-gray-600 font-bold text-center py-4">
+                      All inventory items added
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowAddIngredient(false)}
+                  className="w-full mt-3 bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddIngredient(true)}
+                className="w-full bg-gray-900 text-white rounded-lg p-3 font-bold flex items-center justify-center gap-2 active:bg-gray-800 transition-colors"
+              >
+                <Plus size={24} strokeWidth={2.5} />
+                Add Ingredient
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Delete Button - Above Save Button */}
+        {item && onDelete && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mb-3"
+          >
+            <Trash2 size={28} strokeWidth={2.5} />
+            Delete Dish
+          </button>
+        )}
 
         {/* Save Button */}
         <button
@@ -266,6 +338,35 @@ export default function EditMenuItem({ item, onSave, onCancel }: EditMenuItemPro
           <Save size={28} strokeWidth={2.5} />
           Save Dish
         </button>
+
+        {/* Delete Confirmation */}
+        {showDeleteConfirm && (
+          <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
+              <p className="text-gray-600 mb-6">Are you sure you want to delete this dish?</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (item && onDelete) {
+                      onDelete(item.id);
+                    }
+                    setShowDeleteConfirm(false);
+                  }}
+                  className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

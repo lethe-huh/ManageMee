@@ -28,7 +28,7 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="bg-[#fb6b18] min-h-screen w-full flex items-center justify-center">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#ffffff]">
       <div className="bg-white relative w-full max-w-md h-screen flex flex-col">
         {/* Header */}
         <div className="bg-[#fb6b18] h-[120px] w-full flex items-center justify-center">

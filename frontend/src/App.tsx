@@ -64,7 +64,7 @@ export default function App() {
             <button
               onClick={() => setActiveTab('home')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'home' ? 'text-orange-600' : 'text-gray-600'
+                activeTab === 'home' ? 'text-orange-500' : 'text-gray-600'
               }`}
             >
               <Home size={24} strokeWidth={2.5} />
@@ -73,16 +73,19 @@ export default function App() {
             <button
               onClick={() => setActiveTab('inventory')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'inventory' ? 'text-orange-600' : 'text-gray-600'
+                activeTab === 'inventory' ? 'text-orange-500' : 'text-gray-600'
               }`}
             >
               <Package size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Stock</span>
+              <span className="text-xs font-bold">Inventory</span>
             </button>
             <button
-              onClick={() => setActiveTab('menu')}
+              onClick={() => {
+                setActiveTab('menu');
+                setMenuSubTab('all'); // Reset to 'all' when clicking Menu in nav
+              }}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'menu' ? 'text-orange-600' : 'text-gray-600'
+                activeTab === 'menu' ? 'text-orange-500' : 'text-gray-600'
               }`}
             >
               <ChefHat size={24} strokeWidth={2.5} />
@@ -91,7 +94,7 @@ export default function App() {
             <button
               onClick={() => setActiveTab('analytics')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'analytics' ? 'text-orange-600' : 'text-gray-600'
+                activeTab === 'analytics' ? 'text-orange-500' : 'text-gray-600'
               }`}
             >
               <BarChart3 size={24} strokeWidth={2.5} />
@@ -100,7 +103,7 @@ export default function App() {
             <button
               onClick={() => setActiveTab('settings')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'settings' ? 'text-orange-600' : 'text-gray-600'
+                activeTab === 'settings' ? 'text-orange-500' : 'text-gray-600'
               }`}
             >
               <SettingsIcon size={24} strokeWidth={2.5} />

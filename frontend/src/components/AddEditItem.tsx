@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Scan, Save, X } from 'lucide-react';
-import { InventoryItem } from '../types/inventory';
+import { X, Scan, Save } from 'lucide-react';
 import { suppliers } from '../data/mockData';
+import { InventoryItem } from '../types/inventory';
+import { categories, getUnitsForCategory } from '../data/constants';
 
 interface AddEditItemProps {
   item?: InventoryItem | null;
@@ -21,28 +22,6 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
   });
   const [newSupplierName, setNewSupplierName] = useState('');
   const [showNewSupplierInput, setShowNewSupplierInput] = useState(false);
-
-  const categories = ['Noodles', 'Rice', 'Protein', 'Vegetables', 'Condiments', 'Beverages', 'Other'];
-  
-  // Define units based on category
-  const getUnitsForCategory = (category: string): string[] => {
-    switch (category) {
-      case 'Rice':
-        return ['g', 'kg'];
-      case 'Noodles':
-        return ['g', 'kg'];
-      case 'Protein':
-        return ['g', 'kg', 'pcs'];
-      case 'Vegetables':
-        return ['g', 'kg', 'pcs'];
-      case 'Condiments':
-        return ['ml', 'L'];
-      case 'Beverages':
-        return ['ml', 'L'];
-      default:
-        return ['kg', 'L', 'pcs', 'g', 'ml'];
-    }
-  };
 
   const availableUnits = getUnitsForCategory(formData.category);
 

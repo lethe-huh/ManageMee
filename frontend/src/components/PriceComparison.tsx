@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Search, Plus, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { inventoryItems as initialItems } from '../data/mockData';
 import { supplierPrices } from '../data/supplierPrices';
+import { analyticsData, performanceData, financesData, supplierUpdates } from '../data/analyticsData';
+import { historicalData } from '../data/forecastData';
 import { InventoryItem } from '../types/inventory';
 import LogPrice from './LogPrice';
 import AddEditItem from './AddEditItem';
@@ -20,40 +22,6 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
   const [chartMode, setChartMode] = useState<'sales' | 'finances'>('sales');
   const [showChartModeDropdown, setShowChartModeDropdown] = useState(false);
 
-  // Mock supplier price updates data
-  const supplierUpdates = [
-    {
-      id: '1',
-      date: '5 Feb 2026',
-      ingredient: 'Chicken Breast',
-      supplier: 'Fresh Poultry Supplier',
-      oldPrice: 8.50,
-      newPrice: 9.20,
-      change: 8.2,
-      impact: 'Chicken Rice profit margin drops from 55% to 52%'
-    },
-    {
-      id: '2',
-      date: '3 Feb 2026',
-      ingredient: 'Rice',
-      supplier: 'Grain Wholesale Co',
-      oldPrice: 1.20,
-      newPrice: 1.10,
-      change: -8.3,
-      impact: 'All rice dishes profit margin improves by 2%'
-    },
-    {
-      id: '3',
-      date: '28 Jan 2026',
-      ingredient: 'Soy Sauce',
-      supplier: 'Asian Groceries Pte Ltd',
-      oldPrice: 0.08,
-      newPrice: 0.10,
-      change: 25.0,
-      impact: 'Minimal impact on overall margins (<1%)'
-    }
-  ];
-
   // Check if alert has been shown before
   const checkPriceAlert = () => {
     const hasSeenAlert = sessionStorage.getItem('priceChangeAlertShown');
@@ -62,28 +30,6 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
       sessionStorage.setItem('priceChangeAlertShown', 'true');
     }
   };
-
-  // Analytics data
-  const analyticsData = {
-    revenue: 721.50,
-    cost: 343.40,
-    profit: 378.10,
-    margin: 52.4
-  };
-
-  const performanceData = [
-    { name: 'Chicken Rice', sales: 45 },
-    { name: 'Char Kway Teow', sales: 52 },
-    { name: 'Laksa', sales: 38 },
-    { name: 'Nasi Lemak', sales: 20 }
-  ];
-
-  const financesData = [
-    { name: 'Chicken Rice', revenue: 195, cost: 90, profit: 105 },
-    { name: 'Char Kway Teow', revenue: 165, cost: 88, profit: 77 },
-    { name: 'Laksa', revenue: 155, cost: 82, profit: 73 },
-    { name: 'Nasi Lemak', revenue: 85, cost: 65, profit: 20 }
-  ];
 
   const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -303,6 +249,59 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
               </BarChart>
             )}
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Historical Trend Section */}
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-3">Historical Trend</h2>
+        <p className="text-gray-600 font-bold mb-4">Last 4 Tuesdays vs Today's Prediction</p>
+        
+        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={historicalData} barSize={40}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
+              <XAxis 
+                dataKey="week" 
+                stroke="#374151"
+                style={{ fontSize: '11px', fontWeight: 'bold' }}
+                interval={0}
+              />
+              <YAxis 
+                stroke="#374151"
+                style={{ fontSize: '12px', fontWeight: 'bold' }}
+                domain={[0, 1000]}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  fontWeight: 'bold',
+                  border: '2px solid #ea580c',
+                  borderRadius: '8px'
+                }}
+                formatter={(value) => [`$${value}`, 'Sales']}
+              />
+              <Bar dataKey="sales" radius={[8, 8, 0, 0]}>
+                {historicalData.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.isToday ? '#ea580c' : '#9ca3af'} 
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          
+          {/* Legend */}
+          <div className="flex items-center justify-center gap-6 mt-4">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-400 rounded"></div>
+              <p className="text-sm font-bold text-gray-600">Historical</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-orange-600 rounded"></div>
+              <p className="text-sm font-bold text-gray-600">Today's forecast</p>
+            </div>
+          </div>
         </div>
       </div>
 
