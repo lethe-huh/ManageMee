@@ -109,38 +109,38 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
   }, {} as Record<string, typeof inventoryItems>);
 
   return (
-    <div className="p-4 pb-24">
+    <div className="p-3">
       {/* Header */}
-      <div className="mb-6">
-        <div className="bg-orange-600 rounded-lg p-4 mb-2">
-          <h1 className="text-3xl font-bold text-white">Analytics</h1>
+      <div className="mb-3">
+        <div className="bg-orange-600 rounded-lg p-3 mb-2">
+          <h1 className="text-2xl font-bold text-white">Analytics</h1>
         </div>
         
       </div>
 
       {/* Analytics Overview */}
-      <div className="mb-6">
-        <div className="grid grid-cols-2 gap-4">
+      <div className="mb-3">
+        <div className="grid grid-cols-2 gap-3">
           {/* Revenue Today */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
+          <div className="bg-white border-2 border-gray-300 rounded-lg p-3">
             <p className="text-gray-600 font-bold text-xs mb-1">Revenue Today</p>
             <p className="text-green-600 font-bold text-2xl">${analyticsData.revenue.toFixed(2)}</p>
           </div>
 
           {/* Total Cost */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
+          <div className="bg-white border-2 border-gray-300 rounded-lg p-3">
             <p className="text-gray-600 font-bold text-xs mb-1">Total Cost</p>
             <p className="text-red-600 font-bold text-2xl">${analyticsData.cost.toFixed(2)}</p>
           </div>
 
           {/* Profit Today */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
+          <div className="bg-white border-2 border-gray-300 rounded-lg p-3">
             <p className="text-gray-600 font-bold text-xs mb-1">Profit Today</p>
             <p className="text-blue-600 font-bold text-2xl">${analyticsData.profit.toFixed(2)}</p>
           </div>
 
           {/* Avg Margin */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
+          <div className="bg-white border-2 border-gray-300 rounded-lg p-3">
             <p className="text-gray-600 font-bold text-xs mb-1">Avg Margin</p>
             <p className="text-gray-900 font-bold text-2xl">{analyticsData.margin.toFixed(1)}%</p>
           </div>
@@ -148,8 +148,8 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
       </div>
 
       {/* Performance Chart */}
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-3">Today's Performance</h2>
+      <div className="mb-3">
+        <h2 className="text-lg font-bold text-gray-900 mb-2">Today's Performance</h2>
         <div className="bg-white border-2 border-gray-300 rounded-lg p-4">
           {/* Chart Mode Dropdown */}
           <div className="relative mb-4">
@@ -253,11 +253,11 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
       </div>
 
       {/* Historical Trend Section */}
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-3">Historical Trend</h2>
-        <p className="text-gray-600 font-bold mb-4">Last 4 Tuesdays vs Today's Prediction</p>
+      <div className="mb-3">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Historical Trend</h2>
+        <p className="text-gray-600 font-bold mb-2 text-sm">Last 4 Tuesdays vs Today's Prediction</p>
         
-        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4">
+        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-3">
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={historicalData} barSize={40}>
               <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
@@ -306,12 +306,12 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
       </div>
 
       {/* Supplier Price Tracking Section */}
-      <div className="mb-6">
+      <div className="mb-3">
         <button
           onClick={() => setIsPriceTrackingExpanded(!isPriceTrackingExpanded)}
-          className="w-full flex items-center justify-between mb-4 text-left"
+          className="w-full flex items-center justify-between mb-2 text-left"
         >
-          <h2 className="text-xl font-bold text-gray-900">Ingredient Price Tracking</h2>
+          <h2 className="text-lg font-bold text-gray-900">Ingredient Price Tracking</h2>
           {isPriceTrackingExpanded ? (
             <ChevronUp size={24} strokeWidth={2.5} className="text-gray-600" />
           ) : (
@@ -322,10 +322,10 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
         {isPriceTrackingExpanded && (
           <>
             {/* Search Bar */}
-            <div className="relative mb-4">
+            <div className="relative mb-2">
               <Search 
                 className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
-                size={24}
+                size={20}
                 strokeWidth={2.5}
               />
               <input
@@ -333,7 +333,7 @@ export default function PriceComparison({ onFormStateChange }: { onFormStateChan
                 placeholder="Search ingredients..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-14 pr-4 py-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+                className="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
               />
             </div>
 

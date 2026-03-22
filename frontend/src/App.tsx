@@ -5,6 +5,7 @@ import MenuManager from './components/MenuManager';
 import PriceComparison from './components/PriceComparison';
 import Settings from './components/Settings';
 import Login from './components/Login';
+import IPhoneFrame from './components/IPhoneFrame';
 import { Home, Package, ChefHat, BarChart3, SettingsIcon } from 'lucide-react';
 
 export default function App() {
@@ -30,7 +31,11 @@ export default function App() {
 
   // Show login screen if not authenticated
   if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <IPhoneFrame>
+        <Login onLogin={handleLogin} />
+      </IPhoneFrame>
+    );
   }
 
   const renderContent = () => {
@@ -51,67 +56,69 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col max-w-md mx-auto">
-      {/* Main Content */}
-      <main className={`flex-1 overflow-y-auto ${isFormOpen ? '' : 'pb-20'}`}>
-        {renderContent()}
-      </main>
+    <IPhoneFrame>
+      <div className="h-full bg-white flex flex-col">
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto min-h-0">
+          {renderContent()}
+        </main>
 
-      {/* Bottom Navigation - Hidden when form is open */}
-      {!isFormOpen && (
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t-2 border-gray-200">
-          <div className="grid grid-cols-5 h-20">
-            <button
-              onClick={() => setActiveTab('home')}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'home' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <Home size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Home</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('inventory')}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'inventory' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <Package size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Inventory</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('menu');
-                setMenuSubTab('all'); // Reset to 'all' when clicking Menu in nav
-              }}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'menu' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <ChefHat size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Menu</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'analytics' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <BarChart3 size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Analytics</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'settings' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <SettingsIcon size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Settings</span>
-            </button>
-          </div>
-        </nav>
-      )}
-    </div>
+        {/* Bottom Navigation - Hidden when form is open */}
+        {!isFormOpen && (
+          <nav className="bg-white border-t-2 border-gray-200 flex-shrink-0">
+            <div className="grid grid-cols-5 h-16">
+              <button
+                onClick={() => setActiveTab('home')}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+                  activeTab === 'home' ? 'text-orange-500' : 'text-gray-600'
+                }`}
+              >
+                <Home size={24} strokeWidth={2.5} />
+                <span className="text-xs font-bold">Home</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+                  activeTab === 'inventory' ? 'text-orange-500' : 'text-gray-600'
+                }`}
+              >
+                <Package size={24} strokeWidth={2.5} />
+                <span className="text-xs font-bold">Inventory</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('menu');
+                  setMenuSubTab('all');
+                }}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+                  activeTab === 'menu' ? 'text-orange-500' : 'text-gray-600'
+                }`}
+              >
+                <ChefHat size={24} strokeWidth={2.5} />
+                <span className="text-xs font-bold">Menu</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+                  activeTab === 'analytics' ? 'text-orange-500' : 'text-gray-600'
+                }`}
+              >
+                <BarChart3 size={24} strokeWidth={2.5} />
+                <span className="text-xs font-bold">Analytics</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+                  activeTab === 'settings' ? 'text-orange-500' : 'text-gray-600'
+                }`}
+              >
+                <SettingsIcon size={24} strokeWidth={2.5} />
+                <span className="text-xs font-bold">Settings</span>
+              </button>
+            </div>
+          </nav>
+        )}
+      </div>
+    </IPhoneFrame>
   );
 }

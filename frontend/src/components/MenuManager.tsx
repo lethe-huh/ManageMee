@@ -123,20 +123,18 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
   }, {} as Record<string, MenuItem[]>);
 
   return (
-    <div className="p-4">
+    <div className="p-3">
       {/* Header */}
-      <div className="mb-6">
-        <div className="bg-orange-500 rounded-lg p-4 mb-4">
-          <h1 className="text-3xl font-bold text-white">
-            {activeTab === 'work' ? 'Track Orders' : 'Menu'}
-          </h1>
+      <div className="mb-3">
+        <div className="bg-orange-600 rounded-lg p-3 mb-4 mt-4">
+          <h1 className="text-2xl font-bold text-white">Menu</h1>
         </div>
         
         {/* Search Bar */}
-        <div className="relative">
+        <div className="relative" style={{marginTop: '15px', marginBottom: '15px'}}>
           <Search 
             className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
-            size={24}
+            size={20}
             strokeWidth={2.5}
           />
           <input
@@ -144,29 +142,28 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
             placeholder="Search dishes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-14 pr-4 py-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full pl-12 pr-4 py-3  border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+    
           />
         </div>
 
-        {/* Add New Dish Button - only shown in All Dishes tab */}
-        {activeTab === 'all' && (
-          <button
+        {/* Add New Dish Button */}
+        <button
             onClick={() => {
               setShowEdit(true);
               if (onFormStateChange) {
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-4"
+            className="w-full bg-orange-500  rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-2"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Dish
           </button>
-        )}
       </div>
 
       {/* Menu Items by Category */}
-      <div className="space-y-3 mb-6">{dishCategories.map(category => {
+      <div className="space-y-2 mb-3">{dishCategories.map(category => {
           const items = groupedItems[category] || [];
           const itemCount = items.length;
           const isCollapsed = collapsedCategories.has(category);
@@ -176,17 +173,17 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
               {/* Collapsible Category Header */}
               <button
                 onClick={() => toggleCategoryCollapse(category)}
-                className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-4 flex items-center justify-between active:bg-gray-200 transition-colors"
+                className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-3 flex items-center justify-between active:bg-gray-200 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {isCollapsed ? (
-                    <ChevronRight size={24} className="text-gray-600" strokeWidth={2.5} />
+                    <ChevronRight size={20} className="text-gray-600" strokeWidth={2.5} />
                   ) : (
-                    <ChevronDown size={24} className="text-gray-600" strokeWidth={2.5} />
+                    <ChevronDown size={20} className="text-gray-600" strokeWidth={2.5} />
                   )}
-                  <h2 className="text-xl font-bold text-gray-900">{category}</h2>
+                  <h2 className="text-lg font-bold text-gray-900">{category}</h2>
                 </div>
-                <span className="text-orange-500 font-bold text-lg">
+                <span className="text-orange-500 font-bold text-sm">
                   {itemCount} {itemCount === 1 ? 'dish' : 'dishes'}
                 </span>
               </button>

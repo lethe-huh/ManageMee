@@ -23,6 +23,8 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
   // Get top 5 recent sales
   const topFiveSales = recentSales.slice(0, 5);
 
+  const todayStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+
   useEffect(() => {
     const fetchForecast = async () => {
       try {
@@ -45,25 +47,25 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
   }
 
   return (
-    <div className="p-4">
+    <div className="p-3">
         {/* Header */}
-        <div className="mb-6">
-          <div className="bg-orange-500 rounded-lg p-4 mb-4">
-            <h1 className="text-3xl font-bold text-white">Home</h1>
+        <div className="mb-3">
+          <div className="bg-orange-600 rounded-lg p-3 mb-4">
+            <h1 className="text-2xl font-bold text-white">Home</h1>
           </div>
 
-          <div className="flex items-center gap-2 text-gray-600">
-            <span className="font-semibold">Tuesday, 24 Feb 2026</span>
-            <span className="font-semibold">•</span>
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2 mb-3 text-gray-600">
+            <span className="font-semibold">{todayStr}</span>
+            {/* <span className="font-semibold">•</span> */}
+            {/* <div className="flex items-center gap-1">
               <CloudRain size={18} strokeWidth={2.5} />
               <span className="font-semibold">Rainy</span>
-            </div>
+            </div> */}
           </div>
 
 
         {/* Daily Prep Forecast Widget */}
-        <div className="mb-6">
+        <div className="mb-3">
           <DailyPrepForecast 
             onViewDetails={() => setShowSalesPrediction(true)} 
             recommendations={forecastData?.prepRecommendations} 
@@ -72,19 +74,19 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
 
         
         {/* Track Order Button */}
-        <div className="mb-6 sticky bottom-4 z-10">
+        {/* <div className="mb-3 sticky bottom-4 z-10">
           <button
             onClick={onNavigateToWorkMode}
-            className="w-full bg-orange-500 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-600 transition-colors shadow-lg border-2 border-orange-600"
+            className="w-full bg-orange-500  rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-600 transition-colors shadow-lg border-2 border-orange-600"
           >
             <Zap size={28} strokeWidth={2.5} />
             Track Order
           </button>
-        </div>
+        </div> */}
 
         {/* Today's Sales */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
+        <div className="mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <Receipt size={24} className="text-orange-500" strokeWidth={2.5} />
             <h2 className="text-xl font-bold text-gray-900">Today's Sales</h2>
             <button
@@ -103,9 +105,9 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
               {topFiveSales.map((sale) => (
                 <div
                   key={sale.id}
-                  className="bg-white border-2 border-gray-300 rounded-lg p-4"
+                  className="bg-white border-2 border-gray-300 rounded-lg p-3"
                 >
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-1">
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-900 text-lg">{sale.dishName}</h3>
                       <p className="text-gray-600 font-semibold text-sm">{sale.time}</p>
@@ -120,7 +122,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
               
               {/* See More Button */}
               <button
-                className="w-full bg-white border-2 border-orange-500 text-orange-500 rounded-lg p-4 font-bold text-lg active:bg-orange-50 transition-colors"
+                className="w-full bg-white border-2 border-orange-500 text-orange-500 rounded-lg p-3 font-bold text-base active:bg-orange-50 transition-colors"
               >
                 See More
               </button>

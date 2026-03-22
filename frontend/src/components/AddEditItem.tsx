@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Scan, Save } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import { suppliers } from '../data/mockData';
 import { InventoryItem } from '../types/inventory';
 import { categories, getUnitsForCategory } from '../data/constants';
@@ -50,10 +50,6 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
     onSave(itemData);
   };
 
-  const handleScanBarcode = () => {
-    alert('Barcode scanner would open camera here. For demo purposes, this would use device camera API to scan product barcodes.');
-  };
-
   const handleAddSupplier = () => {
     if (newSupplierName.trim()) {
       const newSupplier = { id: suppliers.length + 1, name: newSupplierName };
@@ -64,10 +60,10 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
   };
 
   return (
-    <div className="p-4">
+    <div className="p-3">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">
           {item ? 'Edit Ingredient' : 'New Ingredient'}
         </h1>
         <button
@@ -78,22 +74,11 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
         </button>
       </div>
 
-      {/* Scan Barcode Button */}
-      
-      <button
-        type="button"
-        onClick={handleScanBarcode}
-        className="w-full bg-gray-900 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 mb-6 active:bg-gray-800 transition-colors"
-      >
-        <Scan size={32} strokeWidth={2.5} />
-        Scan Barcode
-      </button>
-      
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {/* Item Name */}
         <div>
-          <label className="block text-gray-900 font-bold mb-2 text-lg">
+          <label className="block text-gray-900 font-bold mb-1 text-base">
             Item Name *
           </label>
           <input
@@ -102,20 +87,20 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="e.g., Yellow Noodles"
-            className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           />
         </div>
 
         {/* Category */}
         <div>
-          <label className="block text-gray-900 font-bold mb-2 text-lg">
+          <label className="block text-gray-900 font-bold mb-1 text-base">
             Category *
           </label>
           <select
             required
             value={formData.category}
             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           >
             <option value="">Select category</option>
             {categories.map(cat => (
@@ -125,9 +110,9 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
         </div>
 
         {/* Quantity and Unit */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-gray-900 font-bold mb-2 text-lg">
+            <label className="block text-gray-900 font-bold mb-1 text-base">
               Quantity *
             </label>
             <input
@@ -138,18 +123,18 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
               value={formData.quantity}
               onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               placeholder="0.0"
-              className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
             />
           </div>
           <div>
-            <label className="block text-gray-900 font-bold mb-2 text-lg">
+            <label className="block text-gray-900 font-bold mb-1 text-base">
               Unit *
             </label>
             <select
               required
               value={formData.unit}
               onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-              className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
             >
               {availableUnits.map(unit => (
                 <option key={unit} value={unit}>{unit}</option>
@@ -160,7 +145,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
 
         {/* Minimum Quantity */}
         <div>
-          <label className="block text-gray-900 font-bold mb-2 text-lg">
+          <label className="block text-gray-900 font-bold mb-1 text-base">
             Minimum Quantity *
           </label>
           <input
@@ -171,13 +156,13 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
             value={formData.minQuantity}
             onChange={(e) => setFormData({ ...formData, minQuantity: e.target.value })}
             placeholder="0.0"
-            className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           />
         </div>
 
         {/* Supplier */}
         <div>
-          <label className="block text-gray-900 font-bold mb-2 text-lg">
+          <label className="block text-gray-900 font-bold mb-1 text-base">
             Supplier *
           </label>
           <select
@@ -193,7 +178,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
                 setShowNewSupplierInput(false);
               }
             }}
-            className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           >
             <option value="">Select supplier</option>
             {suppliers.map(supplier => (
@@ -215,18 +200,18 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
               }}
               placeholder="New supplier name"
               autoFocus
-              className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600 mt-2"
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600 mt-2"
             />
           )}
         </div>
 
         {/* Target Price */}
         <div>
-          <label className="block text-gray-900 font-bold mb-2 text-lg">
+          <label className="block text-gray-900 font-bold mb-1 text-base">
             Target Price (per {formData.unit})
           </label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-600">$</span>
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-bold text-gray-600">$</span>
             <input
               type="number"
               step="0.01"
@@ -234,7 +219,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
               value={formData.targetPrice}
               onChange={(e) => setFormData({ ...formData, targetPrice: e.target.value })}
               placeholder="0.00"
-              className="w-full pl-12 pr-4 py-4 border-2 border-gray-300 rounded-lg font-bold text-xl focus:outline-none focus:border-orange-600"
+              className="w-full pl-8 pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
             />
           </div>
         </div>
@@ -242,9 +227,9 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
         {/* Save Button */}
         <button
           type="submit"
-          className="w-full bg-orange-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-6"
+          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4"
         >
-          <Save size={28} strokeWidth={2.5} />
+          <Save size={22} strokeWidth={2.5} />
           Save Ingredient
         </button>
       </form>

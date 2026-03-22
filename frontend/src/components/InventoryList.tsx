@@ -214,15 +214,15 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     <div className="p-4">
       {/* Header */}
       <div className="mb-6">
-        <div className="bg-orange-500 rounded-lg p-4 mb-4">
-          <h1 className="text-3xl font-bold text-white">Inventory</h1>
+        <div className="bg-orange-600 rounded-lg p-3 mb-4">
+          <h1 className="text-2xl font-bold text-white">Inventory</h1>
         </div>
         
         {/* Tab Navigation */}
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`flex-1 p-4 rounded-lg font-bold text-lg transition-colors ${
+            className={`flex-1 p-2 mt-2 mb-4 rounded-lg font-bold text-lg transition-colors ${
               activeTab === 'overview'
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
@@ -232,20 +232,13 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           </button>
           <button
             onClick={() => setActiveTab('restock')}
-            className={`flex-1 p-4 rounded-lg font-bold text-lg transition-colors relative ${
+            className={`flex-1 p-2 mt-2 mb-4 rounded-lg font-bold text-lg transition-colors relative ${
               activeTab === 'restock'
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
             }`}
           >
             Restock
-            {lowStockCount > 0 && (
-              <span className={`absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                activeTab === 'restock' ? 'bg-red-600 text-white' : 'bg-red-600 text-white'
-              }`}>
-                {lowStockCount}
-              </span>
-            )}
           </button>
         </div>
         
@@ -261,7 +254,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
             placeholder="Search ingredients..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-14 pr-4 py-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+            className="w-full pl-14 pr-4 py-2 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
           />
         </div>
 
@@ -274,7 +267,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
+            className="w-full bg-orange-500 text-blue rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Ingredient
