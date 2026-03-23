@@ -1,4 +1,5 @@
 export interface RecipeIngredient {
+  id?: string;
   inventoryItemId: string;
   inventoryItemName: string;
   quantity: number;
@@ -11,12 +12,21 @@ export interface MenuItem {
   price: number;
   ingredients: RecipeIngredient[];
   category: string;
-  image?: string; // Optional image URL or data URL
+  image?: string | null; // Optional image URL or data URL
 }
 
+export type MenuItemPayload = Omit<MenuItem, 'id'>;
+
 export interface SaleRecord {
+  id?: string;
   menuItemId: string;
   menuItemName: string;
   quantity: number;
   timestamp: string;
+}
+
+export interface CreateSalePayload {
+  menuItemId: string;
+  menuItemName: string;
+  quantity: number;
 }

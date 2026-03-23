@@ -24,7 +24,7 @@ type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure;
 
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 const sendInternalError = (res: Response, message: string, error: unknown) => {
   console.error(message, error);
@@ -93,6 +93,27 @@ const normalizePendingRestock = (value: unknown) => {
   };
 };
 
+const convertUnitQuantity = (
+  quantity: number,
+  fromUnit: string,
+  toUnit: string
+): number | null => {
+  if (fromUnit === toUnit) return quantity;
+
+  if (fromUnit === 'g' && toUnit === 'kg') return quantity / 1000;
+  if (fromUnit === 'kg' && toUnit === 'g') return quantity * 1000;
+
+  if (fromUnit === 'ml' && toUnit === 'L') return quantity / 1000;
+  if (fromUnit === 'L' && toUnit === 'ml') return quantity * 1000;
+
+  return null;
+};
+
+const roundQuantity = (value: number, decimals = 3) => {
+  const factor = 10 ** decimals;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+};
+
 type PendingRestockPayload = {
   quantity: number;
   supplier: string;
@@ -109,6 +130,7 @@ type InventoryPayload = {
   supplier: string;
   targetPrice: number;
   pendingRestock: PendingRestockPayload | null;
+  image: string | null;
 };
 
 const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayload> => {
@@ -124,6 +146,8 @@ const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayl
   const supplier = normalizeString(body.supplier);
   const targetPrice = normalizeNumber(body.targetPrice);
   const pendingRestock = normalizePendingRestock(body.pendingRestock);
+  const imageValue = normalizeString(body.image);
+  const image = imageValue.length > 0 ? imageValue : null;
 
   if (!name || !category || !unit || !supplier) {
     return {
@@ -151,6 +175,7 @@ const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayl
       supplier,
       targetPrice,
       pendingRestock,
+      image,
     },
   };
 };
@@ -161,11 +186,12 @@ const toInventoryItemData = (
   return {
     name: payload.name,
     category: payload.category,
-    quantity: payload.quantity,
+    quantity: roundQuantity(payload.quantity),
     unit: payload.unit,
-    minQuantity: payload.minQuantity,
+    minQuantity: roundQuantity(payload.minQuantity),
     supplier: payload.supplier,
     targetPrice: payload.targetPrice,
+    image: payload.image,
     pendingRestock:
       payload.pendingRestock === null
         ? Prisma.DbNull
@@ -441,12 +467,19 @@ app.patch("/api/inventory/:id/quantity", async (req, res) => {
   }
 
   try {
+    const existingItem = await prisma.inventoryItem.findUnique({
+      where: { id: req.params.id },
+      select: { quantity: true },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: "Inventory item not found." });
+    }
+
     const updatedItem = await prisma.inventoryItem.update({
       where: { id: req.params.id },
       data: {
-        quantity: {
-          increment: quantityDelta,
-        },
+        quantity: roundQuantity(existingItem.quantity + quantityDelta),
       },
     });
 
@@ -891,7 +924,14 @@ app.get("/api/sales", async (req, res) => {
       orderBy: { timestamp: "desc" },
     });
 
-    return res.json(sales);
+    // Normalise timestamps to explicit UTC ISO strings so browsers never
+    // misinterpret a missing-Z timestamp as local time (which would show 8 hrs off in SGT).
+    const normalised = sales.map(s => ({
+      ...s,
+      timestamp: s.timestamp instanceof Date ? s.timestamp.toISOString() : String(s.timestamp),
+    }));
+
+    return res.json(normalised);
   } catch (error) {
     return sendInternalError(res, "Failed to fetch sales history.", error);
   }
@@ -935,34 +975,66 @@ app.post("/api/sales", async (req, res) => {
       return res.status(404).json({ error: "Menu item not found." });
     }
 
+    const ingredientDeductions: Array<{
+      inventoryItemId: string;
+      totalDeduction: number;
+    }> = [];
+
     for (const ingredient of menuItem.ingredients) {
-      if (ingredient.unit !== ingredient.inventoryItem.unit) {
+      const quantityPerPortionInInventoryUnit = convertUnitQuantity(
+        ingredient.quantity,
+        ingredient.unit,
+        ingredient.inventoryItem.unit
+      );
+
+      if (quantityPerPortionInInventoryUnit === null) {
         return res.status(400).json({
-          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}. Add unit conversion before selling this dish.`,
+          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}.`,
+        });
+      }
+      
+      const totalDeduction = roundQuantity(
+        quantityPerPortionInInventoryUnit * payload.data.quantity
+      );
+
+      if (ingredient.inventoryItem.quantity < totalDeduction) {
+        return res.status(400).json({
+          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.inventoryItem.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
         });
       }
 
-      const totalDeduction = ingredient.quantity * payload.data.quantity;
-      if (ingredient.inventoryItem.quantity < totalDeduction) {
-        return res.status(400).json({
-          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
-        });
-      }
+      ingredientDeductions.push({
+        inventoryItemId: ingredient.inventoryItemId,
+        totalDeduction,
+      });
     }
 
     const result = await prisma.$transaction(async (tx) => {
       const sale = await tx.saleRecord.create({
-        data: payload.data,
+        data: {
+          ...payload.data,
+          timestamp: new Date(), // explicitly set so the DB stores the correct UTC moment
+        },
       });
 
-      for (const ingredient of menuItem.ingredients) {
-        const totalDeduction = ingredient.quantity * payload.data.quantity;
+      for (const deduction of ingredientDeductions) {
+        const currentItem = await tx.inventoryItem.findUnique({
+          where: { id: deduction.inventoryItemId },
+          select: { quantity: true },
+        });
+
+        if (!currentItem) {
+          throw new Error(`Inventory item not found: ${deduction.inventoryItemId}`);
+        }
+
+        const nextQuantity = roundQuantity(
+          currentItem.quantity - deduction.totalDeduction
+        );
+
         await tx.inventoryItem.update({
-          where: { id: ingredient.inventoryItemId },
+          where: { id: deduction.inventoryItemId },
           data: {
-            quantity: {
-              decrement: totalDeduction,
-            },
+            quantity: nextQuantity,
           },
         });
       }
@@ -970,9 +1042,18 @@ app.post("/api/sales", async (req, res) => {
       return sale;
     });
 
+    // Ensure timestamp is returned as an explicit UTC ISO string (with Z suffix)
+    // so browsers never misinterpret it as local time.
+    const saleWithUtcTimestamp = {
+      ...result,
+      timestamp: result.timestamp instanceof Date
+        ? result.timestamp.toISOString()
+        : String(result.timestamp),
+    };
+
     return res.status(201).json({
       message: "Sale recorded and inventory updated.",
-      sale: result,
+      sale: saleWithUtcTimestamp,
     });
   } catch (error) {
     return sendInternalError(res, "Failed to record sale.", error);
@@ -981,17 +1062,28 @@ app.post("/api/sales", async (req, res) => {
 
 app.get('/api/forecast/today', async (req, res) => {
   try {
-    const today = new Date();
-    const currentDayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
-    
-    // 1. Fetch sales from the past 4 weeks to establish a baseline
-    const fourWeeksAgo = new Date();
-    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    // All date logic in SGT (UTC+8) so "today" and day-of-week
+    // match what the hawker stall owner sees on their phone.
+    const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+    const nowSgt = new Date(Date.now() + SGT_OFFSET_MS);
+
+    // Day of week in SGT (0 = Sunday … 6 = Saturday)
+    const currentDayOfWeek = nowSgt.getUTCDay();
+
+    // SGT midnight expressed as UTC — any sale on/after this is "today" and excluded.
+    const sgtMidnightUtc = new Date(
+      Date.UTC(nowSgt.getUTCFullYear(), nowSgt.getUTCMonth(), nowSgt.getUTCDate()) - SGT_OFFSET_MS
+    );
+
+    const fourWeeksAgoUtc = new Date(sgtMidnightUtc);
+    fourWeeksAgoUtc.setUTCDate(fourWeeksAgoUtc.getUTCDate() - 28);
 
     const historicalSales = await prisma.saleRecord.findMany({
       where: {
         timestamp: {
-          gte: fourWeeksAgo
+          gte: fourWeeksAgoUtc,
+          lt: sgtMidnightUtc, // strictly before SGT midnight — today's sales never affect the forecast
         }
       },
       include: {
@@ -1001,19 +1093,27 @@ app.get('/api/forecast/today', async (req, res) => {
       }
     });
 
-    // 2. Filter historical sales strictly to the same day of the week
-    const sameDaySales = historicalSales.filter(
-      sale => new Date(sale.timestamp).getDay() === currentDayOfWeek
-    );
+    // Filter to same day-of-week in SGT
+    const sameDaySales = historicalSales.filter(sale => {
+      const saleSgt = new Date(new Date(sale.timestamp).getTime() + SGT_OFFSET_MS);
+      return saleSgt.getUTCDay() === currentDayOfWeek;
+    });
 
-    // 3. Aggregate total portions sold per menu item over those 4 matching days
+    // 3. Aggregate total portions sold per menu item
     const dishSalesCounts: Record<string, { totalQuantity: number, menuItem: any }> = {};
 
-    sameDaySales.forEach(sale => {
-      if (!dishSalesCounts[sale.menuItemId]) {
-        dishSalesCounts[sale.menuItemId] = { totalQuantity: 0, menuItem: sale.menuItem };
+    sameDaySales.forEach((sale) => {
+      const existingEntry = dishSalesCounts[sale.menuItemId];
+
+      if (existingEntry) {
+        existingEntry.totalQuantity += sale.quantity;
+        return;
       }
-      dishSalesCounts[sale.menuItemId].totalQuantity += sale.quantity;
+
+      dishSalesCounts[sale.menuItemId] = {
+        totalQuantity: sale.quantity,
+        menuItem: sale.menuItem,
+      };
     });
 
     const prepRecommendations = [];
@@ -1085,7 +1185,7 @@ app.get('/api/forecast/today', async (req, res) => {
 
     // 6. Return payload matching frontend expectations
     res.json({
-      date: today.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }),
+      date: nowSgt.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
       weather: 'Rainy',
       confidence: 'High (85%)',
       predictedSales: totalPredictedSales.toFixed(2),

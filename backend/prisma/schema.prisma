@@ -18,7 +18,7 @@ model InventoryItem {
   lastUpdated     DateTime           @updatedAt
   targetPrice     Float
   pendingRestock  Json?
-
+  image           String?
   menuIngredients RecipeIngredient[]
   supplierPrices  SupplierPrice[]
 }

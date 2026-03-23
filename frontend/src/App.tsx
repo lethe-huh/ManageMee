@@ -2,17 +2,17 @@ import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import InventoryList from './components/InventoryList';
 import MenuManager from './components/MenuManager';
-import PriceComparison from './components/PriceComparison';
 import Settings from './components/Settings';
 import Login from './components/Login';
-import { Home, Package, ChefHat, DollarSign, SettingsIcon } from 'lucide-react';
+import { Home, Package, ChefHat, SettingsIcon } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'inventory' | 'menu' | 'prices' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'inventory' | 'menu' | 'settings'>('home');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [inventorySubTab, setInventorySubTab] = useState<'stock' | 'restock'>('stock');
   const [menuSubTab, setMenuSubTab] = useState<'all' | 'work'>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [salesRefreshKey, setSalesRefreshKey] = useState(0);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -28,10 +28,6 @@ export default function App() {
     setInventorySubTab('restock');
   };
 
-  const navigateToPriceTracking = () => {
-    setActiveTab('prices');
-  };
-
   // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
@@ -43,21 +39,27 @@ export default function App() {
         return <Dashboard 
                  onNavigateToWorkMode={navigateToWorkMode} 
                  onNavigateToRestock={navigateToRestock} 
-                 onNavigateToPriceTracking={navigateToPriceTracking} 
+                 salesRefreshKey={salesRefreshKey}
                />;
       case 'inventory':
         return <InventoryList initialSubTab={inventorySubTab} onFormStateChange={setIsFormOpen} />;
       case 'menu':
-        return <MenuManager initialSubTab={menuSubTab} onFormStateChange={setIsFormOpen} />;
-      case 'prices':
-        return <PriceComparison onFormStateChange={setIsFormOpen} />;
+        return <MenuManager 
+                 initialSubTab={menuSubTab} 
+                 onFormStateChange={setIsFormOpen}
+                 onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)} 
+                 onExitToHome={() => {
+                   setActiveTab('home'); 
+                   setMenuSubTab('all'); 
+                   setIsFormOpen(false);
+                 }}
+               />;
       case 'settings':
         return <Settings />;
       default:
         return <Dashboard 
                  onNavigateToWorkMode={navigateToWorkMode} 
                  onNavigateToRestock={navigateToRestock} 
-                 onNavigateToPriceTracking={navigateToPriceTracking} 
                />;
     }
   };
@@ -72,20 +74,23 @@ export default function App() {
       {/* Bottom Navigation - Hidden when form is open */}
       {!isFormOpen && (
         <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t-2 border-gray-200">
-          <div className="grid grid-cols-5 h-20">
+          <div className="grid grid-cols-4 h-20">
             <button
               onClick={() => setActiveTab('home')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'home' ? 'text-orange-500' : 'text-gray-600'
+                activeTab === 'home' ? 'text-orange-600' : 'text-gray-600'
               }`}
             >
               <Home size={24} strokeWidth={2.5} />
               <span className="text-xs font-bold">Home</span>
             </button>
             <button
-              onClick={() => setActiveTab('inventory')}
+            onClick={() => {
+              setActiveTab('inventory');
+              setInventorySubTab('stock');
+            }}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'inventory' ? 'text-orange-500' : 'text-gray-600'
+                activeTab === 'inventory' ? 'text-orange-600' : 'text-gray-600'
               }`}
             >
               <Package size={24} strokeWidth={2.5} />
@@ -94,28 +99,19 @@ export default function App() {
             <button
               onClick={() => {
                 setActiveTab('menu');
-                setMenuSubTab('all'); // Reset to 'all' when clicking Menu in nav
+                setMenuSubTab('all');
               }}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'menu' ? 'text-orange-500' : 'text-gray-600'
+                activeTab === 'menu' ? 'text-orange-600' : 'text-gray-600'
               }`}
             >
               <ChefHat size={24} strokeWidth={2.5} />
               <span className="text-xs font-bold">Menu</span>
             </button>
             <button
-              onClick={() => setActiveTab('prices')}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'prices' ? 'text-orange-500' : 'text-gray-600'
-              }`}
-            >
-              <DollarSign size={24} strokeWidth={2.5} />
-              <span className="text-xs font-bold">Prices</span>
-            </button>
-            <button
               onClick={() => setActiveTab('settings')}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                activeTab === 'settings' ? 'text-orange-500' : 'text-gray-600'
+                activeTab === 'settings' ? 'text-orange-600' : 'text-gray-600'
               }`}
             >
               <SettingsIcon size={24} strokeWidth={2.5} />

@@ -78,7 +78,7 @@ export default function SalesPrediction({ onClose, forecastData }: SalesPredicti
         {/* Date and Weather */}
         <div className="mb-6">
           <div className="flex items-center gap-2">
-            <CloudRain size={24} className="text-orange-500" strokeWidth={2.5} />
+            <CloudRain size={24} className="text-orange-600" strokeWidth={2.5} />
             <p className="font-bold text-gray-900 text-lg">
               {forecastData.date} • {forecastData.weather}
             </p>
@@ -107,7 +107,7 @@ export default function SalesPrediction({ onClose, forecastData }: SalesPredicti
                     )}
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <p className="text-orange-500 font-bold text-3xl">{dish.prep}</p>
+                    <p className="text-orange-600 font-bold text-3xl">{dish.prep}</p>
                     <p className="text-gray-600 font-bold text-base">portions</p>
                   </div>
                 </div>
@@ -138,11 +138,11 @@ export default function SalesPrediction({ onClose, forecastData }: SalesPredicti
           <h2 className="text-xl font-bold text-gray-900 mb-3">Predicted Sales</h2>
           <div className="bg-white border-2 border-gray-300 rounded-lg p-5">
             <p className="font-bold mb-1 text-[16px] text-[#000000]">Predicted Sales</p>
-            <p className="text-5xl font-bold text-orange-500 mb-3">${forecastData.predictedSales}</p>
+            <p className="text-5xl font-bold text-orange-600 mb-3">${forecastData.predictedSales}</p>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-bold text-[#000000]">vs Avg Tuesday</p>
-                <p className="text-2xl font-bold text-orange-500">${forecastData.averageWeekdaySales}</p>
+                <p className="text-2xl font-bold text-orange-600">${forecastData.averageWeekdaySales}</p>
               </div>
               <div className={`text-right px-4 py-2 rounded-lg border-2 ${
                 isIncrease ? 'bg-green-50 border-green-600' : isDecrease ? 'bg-red-50 border-red-600' : 'bg-gray-50 border-gray-300'
