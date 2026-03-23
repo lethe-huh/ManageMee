@@ -36,7 +36,7 @@ export default function DailyPrepForecast({ onViewDetails, recommendations }: Da
   return (
     <div 
       onClick={onViewDetails}
-      className="bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-500 rounded-lg p-4 cursor-pointer active:scale-[0.98] transition-transform"
+      className="bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-600 rounded-lg p-4 cursor-pointer active:scale-[0.98] transition-transform"
     >
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold text-gray-900">Demand Forecast</h2>
@@ -44,19 +44,19 @@ export default function DailyPrepForecast({ onViewDetails, recommendations }: Da
 
       <div className="mb-4">
         <p className="text-gray-600 font-bold text-sm mb-1">Total Portions Expected</p>
-        <p className="text-orange-500 font-bold text-5xl">{totalRecommendedPortions}</p>
+        <p className="text-orange-600 font-bold text-5xl">{totalRecommendedPortions}</p>
       </div>
 
       <div className="mb-4 space-y-2">
         {recommendations.slice(0, 3).map((dish, index) => (
           <div key={index} className="flex items-center justify-between">
             <p className="text-gray-900 font-semibold text-sm">{dish.name}</p>
-            <p className="text-orange-500 font-bold text-lg">{dish.prep}</p>
+            <p className="text-orange-600 font-bold text-lg">{dish.prep}</p>
           </div>
         ))}
       </div>
 
-      <button className="w-full mt-2 text-orange-500 font-bold text-base flex items-center justify-center gap-2">
+      <button className="w-full mt-2 text-orange-600 font-bold text-base flex items-center justify-center gap-2">
         View Prep Guide
         <ChevronRight size={20} strokeWidth={2.5} />
       </button>

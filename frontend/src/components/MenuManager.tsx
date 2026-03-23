@@ -126,7 +126,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     <div className="p-4">
       {/* Header */}
       <div className="mb-6">
-        <div className="bg-orange-500 rounded-lg p-4 mb-4">
+        <div className="bg-orange-600 rounded-lg p-4 mb-4">
           <h1 className="text-3xl font-bold text-white">
             {activeTab === 'work' ? 'Track Orders' : 'Menu'}
           </h1>
@@ -157,7 +157,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-4"
+            className="w-full bg-orange-600 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-4"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Dish
@@ -186,7 +186,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
                   )}
                   <h2 className="text-xl font-bold text-gray-900">{category}</h2>
                 </div>
-                <span className="text-orange-500 font-bold text-lg">
+                <span className="text-orange-600 font-bold text-lg">
                   {itemCount} {itemCount === 1 ? 'dish' : 'dishes'}
                 </span>
               </button>

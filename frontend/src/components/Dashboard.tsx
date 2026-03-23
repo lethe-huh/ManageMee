@@ -48,7 +48,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
     <div className="p-4">
         {/* Header */}
         <div className="mb-6">
-          <div className="bg-orange-500 rounded-lg p-4 mb-4">
+          <div className="bg-orange-600 rounded-lg p-4 mb-4">
             <h1 className="text-3xl font-bold text-white">Home</h1>
           </div>
 
@@ -75,7 +75,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
         <div className="mb-6 sticky bottom-4 z-10">
           <button
             onClick={onNavigateToWorkMode}
-            className="w-full bg-orange-500 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-600 transition-colors shadow-lg border-2 border-orange-600"
+            className="w-full bg-orange-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-600 transition-colors shadow-lg border-2 border-orange-600"
           >
             <Zap size={28} strokeWidth={2.5} />
             Track Order
@@ -85,7 +85,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
         {/* Today's Sales */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
-            <Receipt size={24} className="text-orange-500" strokeWidth={2.5} />
+            <Receipt size={24} className="text-orange-600" strokeWidth={2.5} />
             <h2 className="text-xl font-bold text-gray-900">Today's Sales</h2>
             <button
               className="ml-auto text-gray-500 hover:text-gray-700"
@@ -111,7 +111,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
                       <p className="text-gray-600 font-semibold text-sm">{sale.time}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-orange-500 font-bold text-xl">${sale.total.toFixed(2)}</p>
+                      <p className="text-orange-600 font-bold text-xl">${sale.total.toFixed(2)}</p>
                       <p className="text-gray-600 font-semibold text-sm">Qty: {sale.quantity}</p>
                     </div>
                   </div>
@@ -120,7 +120,7 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
               
               {/* See More Button */}
               <button
-                className="w-full bg-white border-2 border-orange-500 text-orange-500 rounded-lg p-4 font-bold text-lg active:bg-orange-50 transition-colors"
+                className="w-full bg-white border-2 border-orange-600 text-orange-600 rounded-lg p-4 font-bold text-lg active:bg-orange-50 transition-colors"
               >
                 See More
               </button>

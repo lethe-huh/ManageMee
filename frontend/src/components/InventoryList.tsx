@@ -214,7 +214,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     <div className="p-4">
       {/* Header */}
       <div className="mb-6">
-        <div className="bg-orange-500 rounded-lg p-4 mb-4">
+        <div className="bg-orange-600 rounded-lg p-4 mb-4">
           <h1 className="text-3xl font-bold text-white">Inventory</h1>
         </div>
         
@@ -224,7 +224,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
             onClick={() => setActiveTab('overview')}
             className={`flex-1 p-4 rounded-lg font-bold text-lg transition-colors ${
               activeTab === 'overview'
-                ? 'bg-orange-500 text-white'
+                ? 'bg-orange-600 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
             }`}
           >
@@ -234,7 +234,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
             onClick={() => setActiveTab('restock')}
             className={`flex-1 p-4 rounded-lg font-bold text-lg transition-colors relative ${
               activeTab === 'restock'
-                ? 'bg-orange-500 text-white'
+                ? 'bg-orange-600 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
             }`}
           >
@@ -274,7 +274,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
+            className="w-full bg-orange-600 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Ingredient
@@ -304,7 +304,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                   )}
                   <h2 className="text-xl font-bold text-gray-900">{category}</h2>
                 </div>
-                <span className="text-orange-500 font-bold text-lg">
+                <span className="text-orange-600 font-bold text-lg">
                   {itemCount} {itemCount === 1 ? 'ingredient' : 'ingredients'}
                 </span>
               </button>
@@ -437,7 +437,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                       )}
                       <h2 className="text-xl font-bold text-gray-900">{category}</h2>
                     </div>
-                    <span className="text-orange-500 font-bold text-lg">
+                    <span className="text-orange-600 font-bold text-lg">
                       {itemCount} {itemCount === 1 ? 'ingredient' : 'ingredients'}
                     </span>
                   </button>
