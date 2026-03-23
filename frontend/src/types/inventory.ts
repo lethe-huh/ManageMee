@@ -24,6 +24,7 @@ export interface Supplier {
 }
 
 export interface SupplierPrice {
+  id: string;
   supplierId: string;
   supplierName: string;
   inventoryItemId: string;

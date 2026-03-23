@@ -41,6 +41,19 @@ const normalizeString = (value: unknown) => {
   return typeof value === "string" ? value.trim() : "";
 };
 
+/**
+ * Returns the multiplication factor to convert `from` unit into `to` unit.
+ * Returns null if no conversion is possible (incompatible unit families).
+ */
+const getUnitConversionFactor = (from: string, to: string): number | null => {
+  if (from === to) return 1;
+  if (from === "g"  && to === "kg") return 0.001;
+  if (from === "kg" && to === "g")  return 1000;
+  if (from === "ml" && to === "L")  return 0.001;
+  if (from === "L"  && to === "ml") return 1000;
+  return null; // incompatible families (e.g. g vs L)
+};
+
 const normalizeNumber = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -933,19 +946,28 @@ app.post("/api/sales", async (req, res) => {
       return res.status(404).json({ error: "Menu item not found." });
     }
 
+    // Pre-compute deductions (with unit conversion) and validate stock
+    type Deduction = { inventoryItemId: string; amount: number };
+    const deductions: Deduction[] = [];
+
     for (const ingredient of menuItem.ingredients) {
-      if (ingredient.unit !== ingredient.inventoryItem.unit) {
+      const factor = getUnitConversionFactor(ingredient.unit, ingredient.inventoryItem.unit);
+      if (factor === null) {
         return res.status(400).json({
-          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}. Add unit conversion before selling this dish.`,
+          error: `Cannot convert ${ingredient.unit} to ${ingredient.inventoryItem.unit} for ${ingredient.inventoryItemName}. Please fix the recipe or inventory units.`,
         });
       }
 
-      const totalDeduction = ingredient.quantity * payload.data.quantity;
+      const recipeAmountInInventoryUnit = ingredient.quantity * factor;
+      const totalDeduction = recipeAmountInInventoryUnit * payload.data.quantity;
+
       if (ingredient.inventoryItem.quantity < totalDeduction) {
         return res.status(400).json({
-          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
+          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction.toFixed(4)} ${ingredient.inventoryItem.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
         });
       }
+
+      deductions.push({ inventoryItemId: ingredient.inventoryItemId, amount: totalDeduction });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -953,13 +975,12 @@ app.post("/api/sales", async (req, res) => {
         data: payload.data,
       });
 
-      for (const ingredient of menuItem.ingredients) {
-        const totalDeduction = ingredient.quantity * payload.data.quantity;
+      for (const deduction of deductions) {
         await tx.inventoryItem.update({
-          where: { id: ingredient.inventoryItemId },
+          where: { id: deduction.inventoryItemId },
           data: {
             quantity: {
-              decrement: totalDeduction,
+              decrement: deduction.amount,
             },
           },
         });

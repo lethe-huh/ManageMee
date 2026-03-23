@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { X, Save, Plus, Trash2, Edit2 } from 'lucide-react';
 import { MenuItem, RecipeIngredient } from '../types/menu';
-import { inventoryItems } from '../data/mockData';
+import { InventoryItem } from '../types/inventory';
+import microphoneImg from '../assets/microphone.png';
 
 interface EditMenuItemProps {
   item?: MenuItem | null;
+  inventoryItems: InventoryItem[];
   onSave: (item: MenuItem) => void;
   onCancel: () => void;
   onDelete?: (id: string) => void;
 }
 
-export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditMenuItemProps) {
+export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, onDelete }: EditMenuItemProps) {
   const [dishName, setDishName] = useState(item?.name || '');
   const [dishType, setDishType] = useState(item?.category || 'Rice Dishes');
   const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
@@ -33,12 +35,13 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
   };
 
   const handleSave = () => {
+    if (!dishName.trim() || !price) return;
     const menuItem: MenuItem = {
-      id: item?.id || Date.now().toString(),
-      name: dishName,
+      id: item?.id || '',  // empty string for new items; API will assign the UUID
+      name: dishName.trim(),
       price: parseFloat(price),
       category: dishType,
-      ingredients: ingredients,
+      ingredients,
       image: dishImage
     };
     onSave(menuItem);
@@ -48,19 +51,12 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
     const inventoryItem = inventoryItems.find(i => i.id === inventoryItemId);
     if (!inventoryItem) return;
 
-    // Convert units to smaller measurement
-    let unit = inventoryItem.unit;
-    if (unit === 'kg') {
-      unit = 'g';
-    } else if (unit === 'L') {
-      unit = 'ml';
-    }
-
+    // Keep the same unit as the inventory item (backend handles g/ml ↔ kg/L conversion)
     const newIngredient: RecipeIngredient = {
       inventoryItemId: inventoryItem.id,
       inventoryItemName: inventoryItem.name,
       quantity: 0,
-      unit: unit
+      unit: inventoryItem.unit
     };
     setIngredients([...ingredients, newIngredient]);
     setShowAddIngredient(false);
@@ -115,7 +111,7 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
   const allIngredientsZero = ingredients.length > 0 && ingredients.every(ing => ing.quantity === 0);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className=" bg-white">
       {/* Header */}
       <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10">
         <h1 className="text-2xl font-bold text-gray-900">
@@ -129,7 +125,7 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
         </button>
       </div>
 
-      <div className="p-4 pb-24">
+      <div className="p-4 pb-6">
         {/* Top Section: Basic Info */}
         <div className="mb-6">
           
@@ -144,6 +140,7 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
                 accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
+                style={{ display: 'none' }}
                 id="dish-image-upload"
               />
               <label
@@ -164,7 +161,7 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
                     </div>
                   </div>
                 ) : (
-                  <div className="w-24 h-24 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center active:bg-gray-200 transition-colors">
+                  <div className="w-24 h-24 p-3 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center active:bg-gray-200 transition-colors">
                     <Plus size={32} strokeWidth={2.5} className="text-gray-600" />
                   </div>
                 )}
@@ -172,6 +169,12 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
             </div>
           </div>
           
+          {/* Voice input button */}
+          <button type="button" className="flex items-center gap-2 mb-4 px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-50 active:bg-orange-50 active:border-orange-400 transition-colors">
+            <img src={microphoneImg} alt="Voice input" className="w-5 h-5" />
+            <span className="text-sm font-bold text-gray-600">Voice Input</span>
+          </button>
+
           {/* Dish Name */}
           <div className="mb-4">
             <label className="block text-gray-900 font-bold mb-2 text-lg">
@@ -333,7 +336,7 @@ export default function EditMenuItem({ item, onSave, onCancel, onDelete }: EditM
         <button
           onClick={handleSave}
           disabled={!dishName || !price || ingredients.length === 0 || allIngredientsZero}
-          className="w-full bg-orange-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4 mb-4"
         >
           <Save size={28} strokeWidth={2.5} />
           Save Dish

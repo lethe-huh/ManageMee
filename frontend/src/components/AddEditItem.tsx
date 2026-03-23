@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
-import { suppliers } from '../data/mockData';
-import { InventoryItem } from '../types/inventory';
+import { X, Save, Trash2 } from 'lucide-react';
+import * as api from '../api';
+import { InventoryItem, Supplier } from '../types/inventory';
 import { categories, getUnitsForCategory } from '../data/constants';
+import microphoneImg from '../assets/microphone.png';
 
 interface AddEditItemProps {
   item?: InventoryItem | null;
   onSave: (item: any) => void;
+  onDelete?: (id: string) => void;
   onCancel: () => void;
 }
 
-export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps) {
+export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEditItemProps) {
   const [formData, setFormData] = useState({
     name: item?.name || '',
     category: item?.category || '',
@@ -22,6 +24,12 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
   });
   const [newSupplierName, setNewSupplierName] = useState('');
   const [showNewSupplierInput, setShowNewSupplierInput] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  useEffect(() => {
+    api.fetchSuppliers().then(setSuppliers).catch(() => {});
+  }, []);
 
   const availableUnits = getUnitsForCategory(formData.category);
 
@@ -52,8 +60,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
 
   const handleAddSupplier = () => {
     if (newSupplierName.trim()) {
-      const newSupplier = { id: suppliers.length + 1, name: newSupplierName };
-      setFormData(prev => ({ ...prev, supplier: newSupplier.name }));
+      setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
       setNewSupplierName('');
       setShowNewSupplierInput(false);
     }
@@ -62,7 +69,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
   return (
     <div className="p-3">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">
           {item ? 'Edit Ingredient' : 'New Ingredient'}
         </h1>
@@ -73,6 +80,12 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
           <X size={32} strokeWidth={2.5} />
         </button>
       </div>
+
+      {/* Voice input button */}
+      <button type="button" className="flex items-center gap-2 mb-4 px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-50 active:bg-orange-50 active:border-orange-400 transition-colors">
+        <img src={microphoneImg} alt="Voice input" className="w-5 h-5" />
+        <span className="text-sm font-bold text-gray-600">Voice Input</span>
+      </button>
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -166,26 +179,26 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
             Supplier *
           </label>
           <select
-            required
-            value={formData.supplier || ''}
-            onChange={(e) => {
-              if (e.target.value === 'ADD_NEW') {
-                setFormData({ ...formData, supplier: '' });
-                setNewSupplierName('');
-                setShowNewSupplierInput(true);
-              } else {
-                setFormData({ ...formData, supplier: e.target.value });
-                setShowNewSupplierInput(false);
-              }
-            }}
-            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-          >
-            <option value="">Select supplier</option>
-            {suppliers.map(supplier => (
-              <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
-            ))}
-            <option value="ADD_NEW">+ Add New Supplier...</option>
-          </select>
+              required
+              value={formData.supplier || ''}
+              onChange={(e) => {
+                if (e.target.value === 'ADD_NEW') {
+                  setFormData({ ...formData, supplier: '' });
+                  setNewSupplierName('');
+                  setShowNewSupplierInput(true);
+                } else {
+                  setFormData({ ...formData, supplier: e.target.value });
+                  setShowNewSupplierInput(false);
+                }
+              }}
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+            >
+              <option value="">Select supplier</option>
+              {suppliers.map(supplier => (
+                <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
+              ))}
+              <option value="ADD_NEW">+ Add New Supplier...</option>
+            </select>
           {showNewSupplierInput && (
             <input
               type="text"
@@ -219,7 +232,7 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
               value={formData.targetPrice}
               onChange={(e) => setFormData({ ...formData, targetPrice: e.target.value })}
               placeholder="0.00"
-              className="w-full pl-80 pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+              className="w-full pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
               style={{paddingLeft: "30px"}}
             />
           </div>
@@ -228,11 +241,47 @@ export default function AddEditItem({ item, onSave, onCancel }: AddEditItemProps
         {/* Save Button */}
         <button
           type="submit"
-          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4"
+          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4 mb-2"
         >
           <Save size={22} strokeWidth={2.5} />
           Save Ingredient
         </button>
+
+        {/* Delete Button (edit mode only) */}
+        {item && onDelete && (
+          <>
+            {!showDeleteConfirm ? (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full bg-white border-2 border-red-600 text-red-600 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-red-50 transition-colors mb-4"
+              >
+                <Trash2 size={22} strokeWidth={2.5} />
+                Delete Ingredient
+              </button>
+            ) : (
+              <div className="border-2 border-red-600 rounded-lg p-3 mb-4">
+                <p className="text-red-700 font-bold text-center mb-3">Delete this ingredient?</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onDelete(item.id)}
+                    className="flex-1 bg-red-600 text-white rounded-lg p-2 font-bold active:bg-red-700"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1 bg-gray-100 text-gray-700 rounded-lg p-2 font-bold active:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </form>
     </div>
   );

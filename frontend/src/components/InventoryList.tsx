@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Package, ChevronDown, ChevronRight } from 'lucide-react';
-import { inventoryItems as initialItems } from '../data/mockData';
+import * as api from '../api';
 import { categories } from '../data/constants';
 import AddEditItem from './AddEditItem';
 import LowStockAlert from './LowStockAlert';
@@ -14,27 +14,38 @@ interface InventoryListProps {
 
 export default function InventoryList({ initialSubTab = 'stock', onFormStateChange }: InventoryListProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [items, setItems] = useState<InventoryItem[]>(initialItems);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [showAddEdit, setShowAddEdit] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [showLowStockAlert, setShowLowStockAlert] = useState(false);
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [restockingItem, setRestockingItem] = useState<InventoryItem | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'restock'>(initialSubTab === 'restock' ? 'restock' : 'overview');
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
-    // Collapse categories with no items by default
-    const collapsed = new Set<string>();
-    categories.forEach(category => {
-      const hasItems = initialItems.some(item => item.category === category);
-      if (!hasItems) {
-        collapsed.add(category);
-      }
-    });
-    return collapsed;
-  });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  // Check for low stock items on mount - only show once per session
+  // Load inventory from API on mount
   useEffect(() => {
+    api.fetchInventory()
+      .then(data => {
+        setItems(data);
+        // Collapse categories with no items
+        const collapsed = new Set<string>();
+        categories.forEach(category => {
+          if (!data.some(item => item.category === category)) {
+            collapsed.add(category);
+          }
+        });
+        setCollapsedCategories(collapsed);
+      })
+      .catch(err => setApiError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Show low-stock alert once per session (fires after data loads)
+  useEffect(() => {
+    if (loading) return;
     const hasShownAlert = sessionStorage.getItem('lowStockAlertShown');
     if (!hasShownAlert) {
       const lowStockItems = items.filter(item => item.quantity < item.minQuantity);
@@ -43,32 +54,45 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
         sessionStorage.setItem('lowStockAlertShown', 'true');
       }
     }
-  }, [items]);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAddItem = (item: Omit<InventoryItem, 'id' | 'lastUpdated'>) => {
-    const newItem: InventoryItem = {
-      ...item,
-      id: Date.now().toString(),
-      lastUpdated: new Date().toISOString()
-    };
-    setItems([...items, newItem]);
-    setShowAddEdit(false);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  const handleAddItem = async (item: Omit<InventoryItem, 'id' | 'lastUpdated'>) => {
+    try {
+      const created = await api.createInventoryItem(item);
+      setItems(prev => [...prev, created]);
+      setShowAddEdit(false);
+      if (onFormStateChange) onFormStateChange(false);
+    } catch (err: any) {
+      alert(`Failed to add ingredient: ${err.message}`);
     }
   };
 
-  const handleEditItem = (item: InventoryItem) => {
-    setItems(items.map(i => i.id === item.id ? item : i));
-    setShowAddEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  const handleEditItem = async (item: InventoryItem) => {
+    try {
+      const updated = await api.updateInventoryItem(item.id, item);
+      setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+      setShowAddEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) onFormStateChange(false);
+    } catch (err: any) {
+      alert(`Failed to update ingredient: ${err.message}`);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    try {
+      await api.deleteInventoryItem(id);
+      setItems(prev => prev.filter(i => i.id !== id));
+      setShowAddEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) onFormStateChange(false);
+    } catch (err: any) {
+      alert(`Failed to delete ingredient: ${err.message}`);
     }
   };
 
@@ -93,21 +117,18 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     setShowRestockModal(true);
   };
 
-  const handleRestock = (itemId: string, quantity: number, supplier: string, estimatedCost: number) => {
-    setItems(items.map(item => 
-      item.id === itemId 
-        ? { 
-            ...item, 
-            pendingRestock: {
-              quantity,
-              supplier,
-              estimatedCost,
-              date: new Date().toISOString()
-            },
-            lastUpdated: new Date().toISOString() 
-          }
-        : item
-    ));
+  const handleRestock = async (itemId: string, quantity: number, supplier: string, estimatedCost: number) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    try {
+      const updated = await api.updateInventoryItem(itemId, {
+        ...item,
+        pendingRestock: { quantity, supplier, estimatedCost, date: new Date().toISOString() },
+      });
+      setItems(prev => prev.map(i => i.id === itemId ? updated : i));
+    } catch (err: any) {
+      alert(`Failed to save restock: ${err.message}`);
+    }
     setShowRestockModal(false);
     setRestockingItem(null);
   };
@@ -159,11 +180,34 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     );
   }
 
+  if (loading) {
+    return (
+      <div className="p-4 flex items-center justify-center min-h-[200px]">
+        <p className="text-gray-500 font-bold text-lg">Loading inventory...</p>
+      </div>
+    );
+  }
+
+  if (apiError) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-50 border-2 border-red-600 rounded-lg p-4">
+          <p className="text-red-700 font-bold">Failed to load inventory: {apiError}</p>
+          <button
+            onClick={() => { setApiError(null); setLoading(true); api.fetchInventory().then(setItems).catch(e => setApiError(e.message)).finally(() => setLoading(false)); }}
+            className="mt-2 text-red-600 font-bold underline"
+          >Retry</button>
+        </div>
+      </div>
+    );
+  }
+
   if (showAddEdit) {
     return (
       <AddEditItem
         item={editingItem}
         onSave={editingItem ? handleEditItem : handleAddItem}
+        onDelete={editingItem ? handleDeleteItem : undefined}
         onCancel={handleClose}
       />
     );
@@ -243,7 +287,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
         </div>
         
         {/* Search Bar */}
-        <div className="relative mb-4">
+        <div className="relative mb-4" style={{marginBottom: "30px"}}>
           <Search 
             className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
             size={24}
@@ -267,7 +311,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500 text-blue rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
+            className="w-full bg-green-600 text-white rounded-lg p-2 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors m-4"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Ingredient
@@ -380,7 +424,8 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                           {activeTab === 'restock' && isLow && !hasPendingRestock && (
                             <button
                               onClick={() => handleRestockClick(item)}
-                              className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
+                              className="w-full bg-orange-600 text-white rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
+                              style={{marginTop: "25px"}}
                             >
                               <Package size={20} strokeWidth={2.5} />
                               Restock Now
@@ -496,7 +541,8 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                             {!hasPendingRestock && (
                               <button
                                 onClick={() => handleRestockClick(item)}
-                                className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
+                                className="w-full bg-orange-600 text-white rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
+                                style={{marginTop: "25px"}}
                               >
                                 <Package size={20} strokeWidth={2.5} />
                                 Restock (Optional)

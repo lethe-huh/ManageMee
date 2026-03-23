@@ -35,7 +35,7 @@ export default function Settings() {
         <div className="bg-orange-600 rounded-lg p-3 mb-2">
           <h1 className="text-2xl font-bold text-white">Settings</h1>
         </div>
-        <div className="bg-orange-50 border-2 border-orange-600 rounded-lg p-3">
+        <div className="bg-orange-50 border-2 border-orange-600 rounded-lg p-3 mt-4 mb-4" style={{marginTop: "30px", marginBottom: "30px"}}>
           <p className="font-bold text-gray-900 text-lg">King Chicken Stall</p>
           <p className="text-gray-600 font-bold">Block 123, Chinatown Food Centre</p>
         </div>

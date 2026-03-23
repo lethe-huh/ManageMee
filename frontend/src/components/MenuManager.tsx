@@ -1,8 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { menuItems as initialMenuItems } from '../data/menuData';
+import * as api from '../api';
+import roastedcrImg from '../assets/roastedcr.png';
+import cktImg from '../assets/ckt.png';
+import currylaksaImg from '../assets/currylaksa.png';
+import wontonmeeImg from '../assets/wontonmee.png';
+
+const LOCAL_IMAGES: Record<string, string> = {
+  'Roasted Chicken Rice': roastedcrImg,
+  'Char Kway Teow': cktImg,
+  'Curry Laksa': currylaksaImg,
+  'Wonton Mee': wontonmeeImg,
+};
 import { dishCategories } from '../data/constants';
 import { MenuItem } from '../types/menu';
+import { InventoryItem } from '../types/inventory';
 import EditMenuItem from './EditMenuItem';
 import DishAvailability from './DishAvailability';
 import QuickSale from './QuickSale';
@@ -13,35 +25,49 @@ interface MenuManagerProps {
 }
 
 export default function MenuManager({ initialSubTab = 'all', onFormStateChange }: MenuManagerProps) {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenuItems);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [quickSaleItem, setQuickSaleItem] = useState<MenuItem | null>(null);
-  const activeTab = initialSubTab; // Use prop directly instead of state
+  const activeTab = initialSubTab;
   const [searchQuery, setSearchQuery] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
-    // Collapse categories with no dishes by default
-    const collapsed = new Set<string>();
-    dishCategories.forEach(category => {
-      const hasItems = initialMenuItems.some(item => item.category === category);
-      if (!hasItems) {
-        collapsed.add(category);
-      }
-    });
-    return collapsed;
-  });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  const handleSaveMenuItem = (item: MenuItem) => {
-    if (editingItem) {
-      setMenuItems(menuItems.map(m => m.id === item.id ? item : m));
-    } else {
-      setMenuItems([...menuItems, item]);
-    }
-    setShowEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  // Load menu items and inventory on mount
+  useEffect(() => {
+    Promise.all([api.fetchMenu(), api.fetchInventory()])
+      .then(([menu, inv]) => {
+        setMenuItems(menu);
+        setInventoryItems(inv);
+        // Collapse categories with no dishes
+        const collapsed = new Set<string>();
+        dishCategories.forEach(cat => {
+          if (!menu.some(item => item.category === cat)) collapsed.add(cat);
+        });
+        setCollapsedCategories(collapsed);
+      })
+      .catch(err => setApiError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSaveMenuItem = async (item: MenuItem) => {
+    try {
+      if (editingItem) {
+        const updated = await api.updateMenuItem(item.id, item);
+        setMenuItems(prev => prev.map(m => m.id === updated.id ? updated : m));
+      } else {
+        const created = await api.createMenuItem(item);
+        setMenuItems(prev => [...prev, created]);
+      }
+      setShowEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) onFormStateChange(false);
+    } catch (err: any) {
+      alert(`Failed to save dish: ${err.message}`);
     }
   };
 
@@ -61,12 +87,15 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     }
   };
 
-  const handleDelete = (id: string) => {
-    setMenuItems(menuItems.filter(m => m.id !== id));
-    setShowEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  const handleDelete = async (id: string) => {
+    try {
+      await api.deleteMenuItem(id);
+      setMenuItems(prev => prev.filter(m => m.id !== id));
+      setShowEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) onFormStateChange(false);
+    } catch (err: any) {
+      alert(`Failed to delete dish: ${err.message}`);
     }
   };
 
@@ -75,9 +104,9 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     setQuickSaleItem(item);
   };
 
-  const handleSaleConfirm = (updates: { id: string; newQuantity: number }[]) => {
-    // In real app, update inventory here
-    console.log('Inventory updates:', updates);
+  const handleSaleConfirm = () => {
+    // Sale and inventory deduction handled by the backend
+    setQuickSaleItem(null);
   };
 
   const toggleExpanded = (itemId: string) => {
@@ -96,10 +125,29 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     });
   };
 
+  if (loading) {
+    return (
+      <div className="p-4 flex items-center justify-center min-h-[200px]">
+        <p className="text-gray-500 font-bold text-lg">Loading menu...</p>
+      </div>
+    );
+  }
+
+  if (apiError) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-50 border-2 border-red-600 rounded-lg p-4">
+          <p className="text-red-700 font-bold">Failed to load menu: {apiError}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (showEdit) {
     return (
       <EditMenuItem
         item={editingItem}
+        inventoryItems={inventoryItems}
         onSave={handleSaveMenuItem}
         onCancel={handleClose}
         onDelete={handleDelete}
@@ -131,7 +179,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
         </div>
         
         {/* Search Bar */}
-        <div className="relative" style={{marginTop: '15px', marginBottom: '15px'}}>
+        <div className="relative" style={{marginTop: '30px'}}>
           <Search 
             className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
             size={20}
@@ -155,7 +203,8 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-500  rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-2"
+            className="w-full bg-green-600 text-white rounded-lg p-2 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors m-4"
+            style={{marginTop: "30px", marginBottom: "30px"}}
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Dish
@@ -215,9 +264,9 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
                               <div className="flex items-center gap-3">
                                 {/* Dish Image */}
                                 <div className="flex-shrink-0">
-                                  {item.image ? (
+                                  {(item.image || LOCAL_IMAGES[item.name]) ? (
                                     <img
-                                      src={item.image}
+                                      src={item.image || LOCAL_IMAGES[item.name]}
                                       alt={item.name}
                                       className="w-16 h-16 rounded-lg border-2 border-gray-300 object-cover"
                                     />
