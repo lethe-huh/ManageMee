@@ -1,8 +1,11 @@
-import { useState } from 'react';
-import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { menuItems as initialMenuItems } from '../data/menuData';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search, Mic, X } from 'lucide-react';
 import { dishCategories } from '../data/constants';
-import { MenuItem } from '../types/menu';
+import { CreateSalePayload, MenuItem, MenuItemPayload } from '../types/menu';
+import { InventoryItem } from '../types/inventory';
+import { createMenuItem, deleteMenuItem, getMenuItems, updateMenuItem } from '../services/menu';
+import { getInventory } from '../services/inventory';
+import { createSale } from '../services/sales';
 import EditMenuItem from './EditMenuItem';
 import DishAvailability from './DishAvailability';
 import QuickSale from './QuickSale';
@@ -10,41 +13,174 @@ import QuickSale from './QuickSale';
 interface MenuManagerProps {
   initialSubTab?: 'all' | 'work';
   onFormStateChange?: (isOpen: boolean) => void;
+  onExitToHome?: () => void;
+  onSaleRecorded?: () => void;
 }
 
-export default function MenuManager({ initialSubTab = 'all', onFormStateChange }: MenuManagerProps) {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenuItems);
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
+const SPOKEN_NUMBERS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+};
+
+const normalizeVoiceText = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const parseVoiceQuantity = (transcript: string) => {
+  const normalized = normalizeVoiceText(transcript);
+  const firstWord = normalized.split(' ')[0];
+
+  if (!firstWord) {
+    return 1;
+  }
+
+  if (/^\d+$/.test(firstWord)) {
+    return Math.max(1, parseInt(firstWord, 10));
+  }
+
+  return SPOKEN_NUMBERS[firstWord] ?? 1;
+};
+
+const findMenuItemFromTranscript = (transcript: string, items: MenuItem[]) => {
+  const normalizedTranscript = normalizeVoiceText(transcript);
+
+  return [...items]
+    .sort(
+      (a, b) =>
+        normalizeVoiceText(b.name).length - normalizeVoiceText(a.name).length,
+    )
+    .find((item) =>
+      normalizedTranscript.includes(normalizeVoiceText(item.name)),
+    );
+};
+
+export default function MenuManager({ initialSubTab = 'all', onFormStateChange, onExitToHome, onSaleRecorded }: MenuManagerProps) {
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [quickSaleItem, setQuickSaleItem] = useState<MenuItem | null>(null);
   const activeTab = initialSubTab; // Use prop directly instead of state
   const [searchQuery, setSearchQuery] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
-    // Collapse categories with no dishes by default
-    const collapsed = new Set<string>();
-    dishCategories.forEach(category => {
-      const hasItems = initialMenuItems.some(item => item.category === category);
-      if (!hasItems) {
-        collapsed.add(category);
-      }
-    });
-    return collapsed;
-  });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  const handleSaveMenuItem = (item: MenuItem) => {
-    if (editingItem) {
-      setMenuItems(menuItems.map(m => m.id === item.id ? item : m));
-    } else {
-      setMenuItems([...menuItems, item]);
+  const [voicePrefillQuantity, setVoicePrefillQuantity] = useState(1);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  const loadMenuAndInventory = useCallback(async () => {
+    try {
+      const [menu, inventory] = await Promise.all([getMenuItems(), getInventory()]);
+      setMenuItems(menu);
+      setInventoryItems(inventory);
+
+      const collapsed = new Set<string>();
+      dishCategories.forEach((category) => {
+        const hasItems = menu.some((menuItem) => menuItem.category === category);
+        if (!hasItems) {
+          collapsed.add(category);
+        }
+      });
+      setCollapsedCategories(collapsed);
+    } catch (error) {
+      console.error('Failed to load menu/inventory:', error);
     }
-    setShowEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadMenuAndInventory();
+  }, [loadMenuAndInventory]);
+
+  useEffect(() => {
+    if (activeTab === 'work') {
+      onFormStateChange?.(true);
+
+      return () => {
+        onFormStateChange?.(false);
+      };
+    }
+  }, [activeTab, onFormStateChange]);
+
+  const handleSaveMenuItem = async (item: MenuItem | MenuItemPayload) => {
+    try {
+      let savedItem: MenuItem;
+
+      if (editingItem) {
+        savedItem = await updateMenuItem(editingItem.id, {
+          name: item.name,
+          price: item.price,
+          category: item.category,
+          ingredients: item.ingredients,
+          image: item.image ?? null,
+        });
+        setMenuItems((prev) => prev.map((menuItem) => (menuItem.id === savedItem.id ? savedItem : menuItem)));
+      } else {
+        savedItem = await createMenuItem({
+          name: item.name,
+          price: item.price,
+          category: item.category,
+          ingredients: item.ingredients,
+          image: item.image ?? null,
+        });
+        setMenuItems((prev) => [...prev, savedItem]);
+      }
+
+      setShowEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) {
+        onFormStateChange(false);
+      }
+    } catch (error) {
+      console.error('Failed to save menu item:', error);
+      alert(error instanceof Error ? error.message : 'Failed to save menu item.');
     }
   };
-
   const handleEdit = (item: MenuItem) => {
     setEditingItem(item);
     setShowEdit(true);
@@ -61,23 +197,92 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     }
   };
 
-  const handleDelete = (id: string) => {
-    setMenuItems(menuItems.filter(m => m.id !== id));
-    setShowEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteMenuItem(id);
+      setMenuItems((prev) => prev.filter((menuItem) => menuItem.id !== id));
+      setShowEdit(false);
+      setEditingItem(null);
+      if (onFormStateChange) {
+        onFormStateChange(false);
+      }
+    } catch (error) {
+      console.error('Failed to delete menu item:', error);
+      alert(error instanceof Error ? error.message : 'Failed to delete menu item.');
     }
   };
 
   const handleQuickSale = (item: MenuItem, e: React.MouseEvent) => {
     e.stopPropagation();
+    setVoicePrefillQuantity(1);
     setQuickSaleItem(item);
   };
 
-  const handleSaleConfirm = (updates: { id: string; newQuantity: number }[]) => {
-    // In real app, update inventory here
-    console.log('Inventory updates:', updates);
+  const handleSaleConfirm = async (payload: CreateSalePayload) => {
+    try {
+      await createSale(payload);
+      onSaleRecorded?.();
+
+      const refreshedInventory = await getInventory();
+      setInventoryItems(refreshedInventory);
+    } catch (error) {
+      console.error('Failed to record sale:', error);
+      alert(error instanceof Error ? error.message : 'Failed to record sale.');
+      throw error;
+    }
+  };
+
+  const handleExitToHome = () => {
+    onFormStateChange?.(false);
+    onExitToHome?.();
+  };
+
+  const handleVoiceOrder = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Voice ordering is not supported on this device/browser.');
+      return;
+    }
+
+    recognitionRef.current?.stop();
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = 'en-SG';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    setIsListening(true);
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+
+      const matchedMenuItem = findMenuItemFromTranscript(transcript, menuItems);
+
+      if (!matchedMenuItem) {
+        alert(`Could not match a dish from "${transcript}".`);
+        return;
+      }
+
+      setVoicePrefillQuantity(parseVoiceQuantity(transcript));
+      setQuickSaleItem(matchedMenuItem);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Voice order error:', event.error);
+      alert('Unable to capture the voice order. Please try again.');
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
   };
 
   const toggleExpanded = (itemId: string) => {
@@ -96,22 +301,28 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
     });
   };
 
+  // Filter items by search query
+  const filteredMenuItems = useMemo(
+    () =>
+      menuItems.filter(
+        (item) =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.category.toLowerCase().includes(searchQuery.toLowerCase()),
+      ),
+    [menuItems, searchQuery],
+  );
+
   if (showEdit) {
     return (
       <EditMenuItem
         item={editingItem}
+        inventoryItems={inventoryItems}
         onSave={handleSaveMenuItem}
         onCancel={handleClose}
         onDelete={handleDelete}
       />
     );
   }
-
-  // Filter items by search query
-  const filteredMenuItems = menuItems.filter(item =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   // Group by category
   const groupedItems = filteredMenuItems.reduce((acc, item) => {
@@ -124,13 +335,23 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
 
   return (
     <div className="p-4">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="bg-orange-600 rounded-lg p-4 mb-4">
-          <h1 className="text-3xl font-bold text-white">
-            {activeTab === 'work' ? 'Track Orders' : 'Menu'}
-          </h1>
-        </div>
+        {/* Header */}
+        <div className="mb-6">
+          {activeTab === 'work' ? (
+            <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10 mb-4">
+              <h1 className="text-2xl font-bold text-gray-900">Track Orders</h1>
+              <button
+                onClick={handleExitToHome}
+                className="text-gray-600 active:bg-gray-100 p-2 rounded-lg transition-colors"
+              >
+                <X size={28} strokeWidth={2.5} />
+              </button>
+            </div>
+          ) : (
+            <div className="bg-orange-600 rounded-lg p-4 mb-4">
+              <h1 className="text-3xl font-bold text-white">Menu</h1>
+            </div>
+          )}
         
         {/* Search Bar */}
         <div className="relative">
@@ -152,8 +373,9 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
         {activeTab === 'all' && (
           <button
             onClick={() => {
+              setEditingItem(null);
               setShowEdit(true);
-              if (onFormStateChange) {
+              if (onFormStateChange) {  
                 onFormStateChange(true);
               }
             }}
@@ -324,11 +546,33 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange }
         })}
       </div>
 
+      {activeTab === 'work' && !quickSaleItem && (
+        <div className="fixed bottom-6 left-0 right-0 max-w-md mx-auto px-4 z-20 pointer-events-none">
+          <div className="flex justify-center">
+            <button
+              onClick={handleVoiceOrder}
+              className={`pointer-events-auto w-20 h-20 rounded-full border-4 border-white shadow-lg flex items-center justify-center text-white transition-colors ${
+                isListening
+                  ? 'bg-red-600 active:bg-red-700 animate-pulse'
+                  : 'bg-orange-600 active:bg-orange-700'
+              }`}
+            >
+              <Mic size={32} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Quick Sale Modal */}
       {quickSaleItem && (
         <QuickSale
           menuItem={quickSaleItem}
-          onClose={() => setQuickSaleItem(null)}
+          inventoryItems={inventoryItems}
+          initialQuantity={voicePrefillQuantity}
+          onClose={() => {
+            setQuickSaleItem(null);
+            setVoicePrefillQuantity(1);
+          }}
           onConfirm={handleSaleConfirm}
         />
       )}

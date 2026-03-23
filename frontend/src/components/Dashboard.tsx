@@ -1,41 +1,93 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, ChefHat, TrendingDown, CloudRain, ChevronDown, ChevronUp, Zap, Package, BarChart3, Calendar, Bell, Receipt } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
 import { inventoryItems, todaySalesData } from '../data/mockData';
 import { menuItems } from '../data/menuData';
 import { prepRecommendations } from '../data/forecastData';
 import { recentSales } from '../data/salesData';
+
+import { apiRequest } from '../services/api';
+import { getMenuItems } from '../services/menu';
+import { getSales } from '../services/sales';
+import type { MenuItem, SaleRecord } from '../types/menu';
 import DailyPrepForecast from './DailyPrepForecast';
 import SalesPrediction from './SalesPrediction';
 
 interface DashboardProps {
   onNavigateToWorkMode: () => void;
   onNavigateToRestock: () => void;
+  salesRefreshKey?: number;
 }
 
-export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }: DashboardProps) {
+export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock, salesRefreshKey = 0 }: DashboardProps) {
   const [forecastData, setForecastData] = useState<any>(null);
-  const totalSales = todaySalesData.reduce((sum, data) => sum + data.sales, 0);
   const [showSalesPrediction, setShowSalesPrediction] = useState(false);
   const [isPrepGuideExpanded, setIsPrepGuideExpanded] = useState(true);
   const [isTodaysSalesExpanded, setIsTodaysSalesExpanded] = useState(true);
-
+  
   // Get top 5 recent sales
-  const topFiveSales = recentSales.slice(0, 5);
+  // const totalSales = todaySalesData.reduce((sum, data) => sum + data.sales, 0);
+  // const topFiveSales = recentSales.slice(0, 5);
+  const [showAllTodaySales, setShowAllTodaySales] = useState(false);
+  const [recentTodaySales, setRecentTodaySales] = useState<
+    Array<{
+      id: string;
+      dishName: string;
+      time: string;
+      total: number;
+      quantity: number;
+    }>
+  >([]);
+
+  const isSameDay = (dateA: Date, dateB: Date) =>
+    dateA.getFullYear() === dateB.getFullYear() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getDate() === dateB.getDate();
 
   useEffect(() => {
-    const fetchForecast = async () => {
+    const fetchDashboardData = async () => {
       try {
-        // Adjust the URL to match where your backend is running
-        const response = await fetch('http://localhost:3001/api/forecast/today');
-        const data = await response.json();
-        setForecastData(data);
+        const [forecast, sales, menu] = await Promise.all([
+          apiRequest<any>('/api/forecast/today'),
+          getSales(),
+          getMenuItems(),
+        ]);
+
+        setForecastData(forecast);
+
+        const priceByMenuItemId = new Map(
+          menu.map((item) => [item.id, item.price]),
+        );
+
+        const now = new Date();
+
+        const todaySales = sales
+          .filter((sale) => isSameDay(new Date(sale.timestamp), now))
+          .sort(
+            (a, b) =>
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+          );
+
+          setRecentTodaySales(
+            todaySales.map((sale) => ({
+            id: sale.id ?? `${sale.menuItemId}-${sale.timestamp}`,
+            dishName: sale.menuItemName,
+            time: new Date(sale.timestamp).toLocaleTimeString('en-SG', {
+              hour: 'numeric',
+              minute: '2-digit',
+            }),
+            total: (priceByMenuItemId.get(sale.menuItemId) ?? 0) * sale.quantity,
+            quantity: sale.quantity,
+          })),
+        );
       } catch (error) {
-        console.error("Failed to fetch forecast:", error);
+        console.error('Failed to fetch dashboard data:', error);
       }
     };
-    fetchForecast();
-  }, []);
+
+    void fetchDashboardData();
+  }, [salesRefreshKey]);
 
   if (showSalesPrediction) {
     return <SalesPrediction 
@@ -43,6 +95,10 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
              forecastData={forecastData} 
            />;
   }
+
+  const visibleTodaySales = showAllTodaySales
+    ? recentTodaySales
+    : recentTodaySales.slice(0, 5);
 
   return (
     <div className="p-4">
@@ -100,7 +156,12 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
           </div>
           {isTodaysSalesExpanded && (
             <div className="space-y-2">
-              {topFiveSales.map((sale) => (
+              {recentTodaySales.length === 0 ? (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <p className="text-gray-500 font-bold">No sales recorded today yet</p>
+                </div>
+              ) : (
+                visibleTodaySales.map((sale) => (
                 <div
                   key={sale.id}
                   className="bg-white border-2 border-gray-300 rounded-lg p-4"
@@ -116,14 +177,18 @@ export default function Dashboard({ onNavigateToWorkMode, onNavigateToRestock }:
                     </div>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
               
               {/* See More Button */}
-              <button
-                className="w-full bg-white border-2 border-orange-600 text-orange-600 rounded-lg p-4 font-bold text-lg active:bg-orange-50 transition-colors"
-              >
-                See More
-              </button>
+              {recentTodaySales.length > 5 && (
+                <button
+                  onClick={() => setShowAllTodaySales((prev) => !prev)}
+                  className="w-full bg-white border-2 border-orange-600 text-orange-600 rounded-lg p-4 font-bold text-lg active:bg-orange-50 transition-colors"
+                >
+                  {showAllTodaySales ? 'Show Less' : 'See More'}
+                </button>
+              )}
             </div>
           )}
         </div>

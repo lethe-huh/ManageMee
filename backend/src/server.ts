@@ -22,7 +22,7 @@ type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure;
 
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 const sendInternalError = (res: Response, message: string, error: unknown) => {
   console.error(message, error);
@@ -89,6 +89,27 @@ const normalizePendingRestock = (value: unknown) => {
     estimatedCost,
     date,
   };
+};
+
+const convertUnitQuantity = (
+  quantity: number,
+  fromUnit: string,
+  toUnit: string
+): number | null => {
+  if (fromUnit === toUnit) return quantity;
+
+  if (fromUnit === 'g' && toUnit === 'kg') return quantity / 1000;
+  if (fromUnit === 'kg' && toUnit === 'g') return quantity * 1000;
+
+  if (fromUnit === 'ml' && toUnit === 'L') return quantity / 1000;
+  if (fromUnit === 'L' && toUnit === 'ml') return quantity * 1000;
+
+  return null;
+};
+
+const roundQuantity = (value: number, decimals = 3) => {
+  const factor = 10 ** decimals;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
 };
 
 type PendingRestockPayload = {
@@ -159,9 +180,9 @@ const toInventoryItemData = (
   return {
     name: payload.name,
     category: payload.category,
-    quantity: payload.quantity,
+    quantity: roundQuantity(payload.quantity),
     unit: payload.unit,
-    minQuantity: payload.minQuantity,
+    minQuantity: roundQuantity(payload.minQuantity),
     supplier: payload.supplier,
     targetPrice: payload.targetPrice,
     pendingRestock:
@@ -439,12 +460,19 @@ app.patch("/api/inventory/:id/quantity", async (req, res) => {
   }
 
   try {
+    const existingItem = await prisma.inventoryItem.findUnique({
+      where: { id: req.params.id },
+      select: { quantity: true },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: "Inventory item not found." });
+    }
+
     const updatedItem = await prisma.inventoryItem.update({
       where: { id: req.params.id },
       data: {
-        quantity: {
-          increment: quantityDelta,
-        },
+        quantity: roundQuantity(existingItem.quantity + quantityDelta),
       },
     });
 
@@ -933,19 +961,38 @@ app.post("/api/sales", async (req, res) => {
       return res.status(404).json({ error: "Menu item not found." });
     }
 
+    const ingredientDeductions: Array<{
+      inventoryItemId: string;
+      totalDeduction: number;
+    }> = [];
+
     for (const ingredient of menuItem.ingredients) {
-      if (ingredient.unit !== ingredient.inventoryItem.unit) {
+      const quantityPerPortionInInventoryUnit = convertUnitQuantity(
+        ingredient.quantity,
+        ingredient.unit,
+        ingredient.inventoryItem.unit
+      );
+
+      if (quantityPerPortionInInventoryUnit === null) {
         return res.status(400).json({
-          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}. Add unit conversion before selling this dish.`,
+          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}.`,
+        });
+      }
+      
+      const totalDeduction = roundQuantity(
+        quantityPerPortionInInventoryUnit * payload.data.quantity
+      );
+
+      if (ingredient.inventoryItem.quantity < totalDeduction) {
+        return res.status(400).json({
+          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.inventoryItem.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
         });
       }
 
-      const totalDeduction = ingredient.quantity * payload.data.quantity;
-      if (ingredient.inventoryItem.quantity < totalDeduction) {
-        return res.status(400).json({
-          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
-        });
-      }
+      ingredientDeductions.push({
+        inventoryItemId: ingredient.inventoryItemId,
+        totalDeduction,
+      });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -953,14 +1000,24 @@ app.post("/api/sales", async (req, res) => {
         data: payload.data,
       });
 
-      for (const ingredient of menuItem.ingredients) {
-        const totalDeduction = ingredient.quantity * payload.data.quantity;
+      for (const deduction of ingredientDeductions) {
+        const currentItem = await tx.inventoryItem.findUnique({
+          where: { id: deduction.inventoryItemId },
+          select: { quantity: true },
+        });
+
+        if (!currentItem) {
+          throw new Error(`Inventory item not found: ${deduction.inventoryItemId}`);
+        }
+
+        const nextQuantity = roundQuantity(
+          currentItem.quantity - deduction.totalDeduction
+        );
+
         await tx.inventoryItem.update({
-          where: { id: ingredient.inventoryItemId },
+          where: { id: deduction.inventoryItemId },
           data: {
-            quantity: {
-              decrement: totalDeduction,
-            },
+            quantity: nextQuantity,
           },
         });
       }
@@ -1007,11 +1064,18 @@ app.get('/api/forecast/today', async (req, res) => {
     // 3. Aggregate total portions sold per menu item over those 4 matching days
     const dishSalesCounts: Record<string, { totalQuantity: number, menuItem: any }> = {};
 
-    sameDaySales.forEach(sale => {
-      if (!dishSalesCounts[sale.menuItemId]) {
-        dishSalesCounts[sale.menuItemId] = { totalQuantity: 0, menuItem: sale.menuItem };
+    sameDaySales.forEach((sale) => {
+      const existingEntry = dishSalesCounts[sale.menuItemId];
+
+      if (existingEntry) {
+        existingEntry.totalQuantity += sale.quantity;
+        return;
       }
-      dishSalesCounts[sale.menuItemId].totalQuantity += sale.quantity;
+
+      dishSalesCounts[sale.menuItemId] = {
+        totalQuantity: sale.quantity,
+        menuItem: sale.menuItem,
+      };
     });
 
     const prepRecommendations = [];

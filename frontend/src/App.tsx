@@ -13,6 +13,7 @@ export default function App() {
   const [inventorySubTab, setInventorySubTab] = useState<'stock' | 'restock'>('stock');
   const [menuSubTab, setMenuSubTab] = useState<'all' | 'work'>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [salesRefreshKey, setSalesRefreshKey] = useState(0);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -40,13 +41,16 @@ export default function App() {
       case 'inventory':
         return <InventoryList initialSubTab={inventorySubTab} onFormStateChange={setIsFormOpen} />;
       case 'menu':
-        return <MenuManager initialSubTab={menuSubTab} onFormStateChange={setIsFormOpen} />;
+        return <MenuManager initialSubTab={menuSubTab} onFormStateChange={setIsFormOpen} onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)} 
+        onExitToHome={() => {
+          setActiveTab('home'); setMenuSubTab('all'); setIsFormOpen(false);}}
+        />;
       case 'analytics':
         return <PriceComparison onFormStateChange={setIsFormOpen} />;
       case 'settings':
         return <Settings />;
       default:
-        return <Dashboard onNavigateToWorkMode={navigateToWorkMode} onNavigateToRestock={navigateToRestock} />;
+        return <Dashboard onNavigateToWorkMode={navigateToWorkMode} onNavigateToRestock={navigateToRestock} salesRefreshKey={salesRefreshKey}/>;
     }
   };
 
@@ -71,7 +75,10 @@ export default function App() {
               <span className="text-xs font-bold">Home</span>
             </button>
             <button
-              onClick={() => setActiveTab('inventory')}
+            onClick={() => {
+              setActiveTab('inventory');
+              setInventorySubTab('stock');
+            }}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
                 activeTab === 'inventory' ? 'text-orange-600' : 'text-gray-600'
               }`}
