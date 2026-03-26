@@ -1,12 +1,13 @@
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 import { MenuItem } from '../types/menu';
-import { inventoryItems } from '../data/mockData';
+import { InventoryItem } from '../types/inventory';
 
 interface DishAvailabilityProps {
   menuItem: MenuItem;
+  inventoryItems: InventoryItem[];
 }
 
-export default function DishAvailability({ menuItem }: DishAvailabilityProps) {
+export default function DishAvailability({ menuItem, inventoryItems }: DishAvailabilityProps) {
   // Calculate max portions for each ingredient
   const ingredientPortions = menuItem.ingredients.map(ingredient => {
     const inventoryItem = inventoryItems.find(item => item.id === ingredient.inventoryItemId);

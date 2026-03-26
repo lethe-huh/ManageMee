@@ -8,12 +8,8 @@ export interface InventoryItem {
   supplier: string;
   lastUpdated: string;
   targetPrice: number; // Price per unit in SGD
-  pendingRestock?: {
-    quantity: number;
-    supplier: string;
-    estimatedCost: number;
-    date: string;
-  };
+  pendingRestock?: PendingRestock | null;
+  image?: string | null;
 }
 
 export interface Supplier {
@@ -24,10 +20,29 @@ export interface Supplier {
 }
 
 export interface SupplierPrice {
-  id: string;
+  id?: string;
   supplierId: string;
   supplierName: string;
   inventoryItemId: string;
-  price: number; // Price per unit
+  price: number;
   lastUpdated: string;
+}
+
+export interface PendingRestock {
+  quantity: number;
+  supplier: string;
+  estimatedCost: number;
+  date: string;
+}
+
+export interface InventoryItemPayload {
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  minQuantity: number;
+  supplier: string;
+  targetPrice: number;
+  pendingRestock: PendingRestock | null;
+  image?: string | null;
 }

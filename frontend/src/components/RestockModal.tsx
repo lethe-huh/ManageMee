@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Phone, TrendingDown, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { InventoryItem } from '../types/inventory';
-import { supplierPrices } from '../data/supplierPrices';
-import { suppliers } from '../data/mockData';
+import { InventoryItem, Supplier, SupplierPrice } from '../types/inventory';
+import { getSupplierPrices } from '../services/supplierPrices';
+import { getSuppliers } from '../services/suppliers';
 
 interface RestockModalProps {
   item: InventoryItem;
@@ -17,22 +17,56 @@ export default function RestockModal({ item, onRestock, onClose }: RestockModalP
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<'min' | 'recommended' | '3x' | null>(null);
+  const [supplierPriceOptions, setSupplierPriceOptions] = useState<SupplierPrice[]>([]);
+  const [supplierOptions, setSupplierOptions] = useState<Supplier[]>([]);
 
-  // Get supplier prices for this item
-  const itemSupplierPrices = supplierPrices.filter(sp => sp.inventoryItemId === item.id);
-  
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [prices, suppliers] = await Promise.all([
+          getSupplierPrices(item.id),
+          getSuppliers(),
+        ]);
+
+        setSupplierPriceOptions(prices);
+        setSupplierOptions(suppliers);
+      } catch (error) {
+        console.error('Failed to load restock data:', error);
+        setSupplierPriceOptions([]);
+        setSupplierOptions([]);
+      }
+    };
+
+    void loadData();
+  }, [item.id]);
+
+  const itemSupplierPrices = supplierPriceOptions;
+
   // Calculate average price
   const averagePrice = itemSupplierPrices.length > 0
     ? itemSupplierPrices.reduce((sum, sp) => sum + sp.price, 0) / itemSupplierPrices.length
     : item.targetPrice;
 
   // Sort suppliers by price (best price first)
-  const sortedSuppliers = [...itemSupplierPrices].sort((a, b) => a.price - b.price);
+  const sortedSuppliers = useMemo(
+    () => [...itemSupplierPrices].sort((a, b) => a.price - b.price),
+    [itemSupplierPrices],
+  );
 
-  // Set default selected supplier to the best price
-  if (selectedSupplier === null && sortedSuppliers.length > 0) {
-    setSelectedSupplier(sortedSuppliers[0].supplierName);
-  }
+  useEffect(() => {
+    if (selectedSupplier) {
+      return;
+    }
+
+    if (sortedSuppliers.length > 0) {
+      setSelectedSupplier(sortedSuppliers[0].supplierName);
+      return;
+    }
+
+    if (item.supplier) {
+      setSelectedSupplier(item.supplier);
+    }
+  }, [item.supplier, selectedSupplier, sortedSuppliers]);
 
   const handleInitialConfirm = () => {
     if (restockQuantity > 0) {
@@ -48,7 +82,7 @@ export default function RestockModal({ item, onRestock, onClose }: RestockModalP
   };
 
   const getSupplierPhone = (supplierName: string) => {
-    const supplier = suppliers.find(s => s.name === supplierName);
+    const supplier = supplierOptions.find((s) => s.name === supplierName);
     return supplier?.phone || 'N/A';
   };
 
@@ -60,7 +94,7 @@ export default function RestockModal({ item, onRestock, onClose }: RestockModalP
 
   // Show confirmation summary
   if (showConfirmation) {
-    const selectedSupplierDetails = suppliers.find(s => s.name === selectedSupplier);
+    const selectedSupplierDetails = supplierOptions.find((s) => s.name === selectedSupplier);
     const pricePerUnit = selectedSupplierPrice?.price || sortedSuppliers[0]?.price || item.targetPrice;
     
     return (

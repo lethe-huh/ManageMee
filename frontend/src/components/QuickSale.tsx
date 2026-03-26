@@ -1,13 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle, X, TrendingDown, Plus, Minus, ShoppingBag } from 'lucide-react';
-import { MenuItem } from '../types/menu';
+import { CreateSalePayload, MenuItem } from '../types/menu';
 import { InventoryItem } from '../types/inventory';
 import { motion, AnimatePresence } from 'motion/react';
 
+const convertUnitQuantity = (quantity: number, fromUnit: string, toUnit: string): number | null => {
+  if (fromUnit === toUnit) return quantity;
+
+  if (fromUnit === 'g' && toUnit === 'kg') return quantity / 1000;
+  if (fromUnit === 'kg' && toUnit === 'g') return quantity * 1000;
+
+  if (fromUnit === 'ml' && toUnit === 'L') return quantity / 1000;
+  if (fromUnit === 'L' && toUnit === 'ml') return quantity * 1000;
+
+  return null;
+};
+
+const formatQuantity = (value: number) => Number(value.toFixed(3)).toString();
+
 interface QuickSaleProps {
   menuItem: MenuItem;
+  inventoryItems: InventoryItem[];
   onClose: () => void;
-  onConfirm: (updates: { id: string; newQuantity: number }[]) => void;
+  onConfirm: (payload: CreateSalePayload) => void | Promise<void>;
+  initialQuantity?: number;
 }
 
 interface IngredientAdjustment {
@@ -18,9 +34,9 @@ interface IngredientAdjustment {
   unit: string;
 }
 
-export default function QuickSale({ menuItem, onClose, onConfirm }: QuickSaleProps) {
+export default function QuickSale({ menuItem, inventoryItems, onClose, onConfirm, initialQuantity = 1 }: QuickSaleProps) {
   const [animationStage, setAnimationStage] = useState<'input' | 'deducting' | 'complete'>('input');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(initialQuantity);
   const [showIngredientAdjustments, setShowIngredientAdjustments] = useState(false);
   const [ingredientAdjustments, setIngredientAdjustments] = useState<IngredientAdjustment[]>(
     menuItem.ingredients.map(ing => ({
@@ -68,26 +84,62 @@ export default function QuickSale({ menuItem, onClose, onConfirm }: QuickSalePro
     });
   };
 
-  const handleConfirmSale = () => {
-    // Calculate inventory deductions
-    const updates = ingredientAdjustments.map(ingredient => {
-      // Mock current inventory - in real app, get from inventory state
-      const mockCurrentStock = 10; // This should come from actual inventory
-      const deduction = ingredient.adjustedQuantity * quantity;
-      
+const handleConfirmSale = async () => {
+  const hasCustomAdjustments = ingredientAdjustments.some(
+    (ingredient) => ingredient.adjustedQuantity !== ingredient.baseQuantity,
+  );
+
+  if (hasCustomAdjustments) {
+    alert('Customized ingredient deductions are not connected to the backend yet. Reset the ingredients to the default recipe to continue.');
+    return;
+  }
+
+  try {
+    const updates = ingredientAdjustments.map((ingredient) => {
+      const inventoryItem = inventoryItems.find((item) => item.id === ingredient.inventoryItemId);
+
+      if (!inventoryItem) {
+        throw new Error(`Inventory item not found for ${ingredient.inventoryItemName}`);
+      }
+
+      const deductionInInventoryUnit = convertUnitQuantity(
+        ingredient.adjustedQuantity * quantity,
+        ingredient.unit,
+        inventoryItem.unit,
+      );
+
+      if (deductionInInventoryUnit === null) {
+        throw new Error(
+          `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${inventoryItem.unit}.`,
+        );
+      }
+
+      const roundedDeduction = Number(deductionInInventoryUnit.toFixed(3));
+      const roundedPreviousStock = Number(inventoryItem.quantity.toFixed(3));
+      const roundedNewStock = Number((inventoryItem.quantity - roundedDeduction).toFixed(3));
+
       return {
         id: ingredient.inventoryItemId,
         name: ingredient.inventoryItemName,
-        deduction,
-        unit: ingredient.unit,
-        previousStock: mockCurrentStock,
-        newStock: mockCurrentStock - deduction
+        deduction: roundedDeduction,
+        unit: inventoryItem.unit,
+        previousStock: roundedPreviousStock,
+        newStock: roundedNewStock,
       };
     });
-    
+
+    await onConfirm({
+      menuItemId: menuItem.id,
+      menuItemName: menuItem.name,
+      quantity,
+    });
+
     setInventoryUpdates(updates);
     setAnimationStage('deducting');
-  };
+  } catch (error) {
+    console.error('Failed to confirm sale:', error);
+  }
+};
 
   // 1️⃣ Handle transition to complete
   useEffect(() => {
@@ -104,18 +156,16 @@ export default function QuickSale({ menuItem, onClose, onConfirm }: QuickSalePro
   useEffect(() => {
     if (animationStage === 'complete') {
       const closeTimer = setTimeout(() => {
-        const inventoryChanges = inventoryUpdates.map(u => ({
-          id: u.id,
-          newQuantity: u.newStock
-        }));
-  
-        onConfirm(inventoryChanges);
         onClose();
-      }, 5000);
+      }, 2000);
   
       return () => clearTimeout(closeTimer);
     }
-  }, [animationStage, inventoryUpdates, onConfirm, onClose]);
+  }, [animationStage, onClose]);
+
+  useEffect(() => {
+  setQuantity(initialQuantity);
+}, [initialQuantity, menuItem.id]);
 
   const incrementQuantity = () => setQuantity(q => q + 1);
   const decrementQuantity = () => setQuantity(q => Math.max(1, q - 1));
@@ -353,7 +403,7 @@ export default function QuickSale({ menuItem, onClose, onConfirm }: QuickSalePro
                       <div className="flex-1">
                         <p className="font-bold text-gray-900">{update.name}</p>
                         <p className="text-red-600 font-bold text-xl">
-                          -{update.deduction.toFixed(1)} {update.unit}
+                          -{formatQuantity(update.deduction)} {update.unit}
                         </p>
                       </div>
                     </motion.div>
@@ -393,10 +443,10 @@ export default function QuickSale({ menuItem, onClose, onConfirm }: QuickSalePro
                         <p className="font-bold text-gray-900 text-sm">{update.name}</p>
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-gray-400 line-through text-sm">
-                            {update.previousStock+500-10} {update.unit}
+                            {formatQuantity(update.previousStock)} {update.unit}
                           </p>
                           <p className="font-bold text-green-600 text-lg">
-                            {update.newStock+490} {update.unit}
+                            {formatQuantity(update.newStock)} {update.unit}
                           </p>
                         </div>
                       </div>

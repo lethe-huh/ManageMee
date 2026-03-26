@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Save, Plus, Trash2, Edit2 } from 'lucide-react';
-import { MenuItem, RecipeIngredient } from '../types/menu';
+import { MenuItem, MenuItemPayload, RecipeIngredient } from '../types/menu';
 import { InventoryItem } from '../types/inventory';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseDishTranscript } from '../utils/voiceParsers';
@@ -9,9 +9,15 @@ import microphoneImg from '../assets/microphone.png';
 interface EditMenuItemProps {
   item?: MenuItem | null;
   inventoryItems: InventoryItem[];
-  onSave: (item: MenuItem) => void;
+  onSave: (item: MenuItem | MenuItemPayload) => void | Promise<void>;
   onCancel: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string, salesAction: 'keep' | 'delete') => void | Promise<void>;
+}
+
+const normalizeToSmallestUnit = (quantity: number, unit: string) => {
+  if (unit === 'kg') return { quantity: quantity * 1000, unit: 'g' };
+  if (unit === 'L') return { quantity: quantity * 1000, unit: 'ml' };
+  return { quantity, unit };
 }
 
 export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, onDelete }: EditMenuItemProps) {
@@ -19,16 +25,24 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   const [dishType, setDishType] = useState(item?.category || 'Rice Dishes');
   const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
   const [dishImage, setDishImage] = useState<string | undefined>(item?.image);
+  const [dishImagePreview, setDishImagePreview] = useState<string | undefined>(item?.image);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
-    item?.ingredients || []
+    () =>
+      (item?.ingredients || []).map((ingredient) => {
+        const normalized = normalizeToSmallestUnit(ingredient.quantity, ingredient.unit);
+
+        return {
+          ...ingredient,
+          quantity: normalized.quantity,
+          unit: normalized.unit,
+        };
+      })
   );
   const [showAddIngredient, setShowAddIngredient] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { voiceState, transcript, voiceError, toggle, resultCount } = useVoiceInput();
 
   // Populate form fields when voice transcript is ready.
-  // Depends on resultCount (incremented per transcription) so re-recording
-  // the same phrase still re-applies the parsed values.
   useEffect(() => {
     if (voiceState === 'done' && transcript) {
       const parsed = parseDishTranscript(transcript);
@@ -38,42 +52,116 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultCount]);
+  const [ingredientToDelete, setIngredientToDelete] = useState<number | null>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setDishImage(reader.result as string);
+  useEffect(() => {
+  return () => {
+    if (dishImagePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(dishImagePreview);
+    }
+  };
+}, [dishImagePreview]);
+
+  const resizeImageToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load image.'));
       };
-      reader.readAsDataURL(file);
+
+      img.onload = () => {
+        try {
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+
+          let { width, height } = img;
+
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            const scale = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Failed to process image.'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL('image/jpeg', 0.7);
+
+          URL.revokeObjectURL(objectUrl);
+          resolve(compressed);
+        } catch (error) {
+          URL.revokeObjectURL(objectUrl);
+          reject(error);
+        }
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previousImage = dishImage;
+    const previousPreview = dishImagePreview;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setDishImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    try {
+      const compressedImage = await resizeImageToDataUrl(file);
+      setDishImage(compressedImage);
+    } catch (error) {
+      console.error('Failed to process image:', error);
+      setDishImage(previousImage);
+      setDishImagePreview(previousPreview);
+      alert('Failed to process image.');
     }
   };
 
-  const handleSave = () => {
-    if (!dishName.trim() || !price) return;
-    const menuItem: MenuItem = {
-      id: item?.id || '',  // empty string for new items; API will assign the UUID
-      name: dishName.trim(),
+  const handleSave = async () => {
+    const menuItem = {
+      ...(item ? { id: item.id } : {}),
+      name: dishName,
       price: parseFloat(price),
       category: dishType,
       ingredients,
-      image: dishImage
+      image: dishImage ?? null,
     };
-    onSave(menuItem);
+
+    await onSave(menuItem);
   };
 
   const addIngredient = (inventoryItemId: string) => {
     const inventoryItem = inventoryItems.find(i => i.id === inventoryItemId);
     if (!inventoryItem) return;
 
-    // Keep the same unit as the inventory item (backend handles g/ml ↔ kg/L conversion)
+    const normalized = normalizeToSmallestUnit(0, inventoryItem.unit);
+
     const newIngredient: RecipeIngredient = {
       inventoryItemId: inventoryItem.id,
       inventoryItemName: inventoryItem.name,
       quantity: 0,
-      unit: inventoryItem.unit
+      unit: normalized.unit,
     };
+
     setIngredients([...ingredients, newIngredient]);
     setShowAddIngredient(false);
   };
@@ -94,6 +182,16 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
 
   const removeIngredient = (index: number) => {
     setIngredients(ingredients.filter((_, i) => i !== index));
+  };
+
+  const clearDishImage = () => {
+    setDishImage(undefined);
+    setDishImagePreview((current) => {
+      if (current?.startsWith('blob:')) {
+        URL.revokeObjectURL(current);
+      }
+      return undefined;
+    });
   };
 
   // Filter available items based on dish type
@@ -124,8 +222,9 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
     });
 
   // Check if all ingredients have 0 quantity (for create mode)
+  const displayedImage = dishImagePreview || dishImage;
   const allIngredientsZero = ingredients.length > 0 && ingredients.every(ing => ing.quantity === 0);
-
+  
   return (
     <div className=" bg-white">
       {/* Header */}
@@ -163,14 +262,14 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
                 htmlFor="dish-image-upload"
                 className="inline-block cursor-pointer"
               >
-                {dishImage ? (
+                {displayedImage ? (
                   <div className="relative w-24 h-24 rounded-lg border-2 border-gray-300 overflow-hidden group">
                     <img
-                      src={dishImage}
+                      src={displayedImage}
                       alt="Dish preview"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-active:bg-opacity-30 transition-all flex items-center justify-center">
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                       <div className="bg-white rounded-full p-2 opacity-0 group-active:opacity-100 transition-opacity">
                         <Edit2 size={20} strokeWidth={2.5} className="text-gray-900" />
                       </div>
@@ -317,7 +416,13 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <p className="font-bold text-gray-900">{ingredient.inventoryItemName}</p>
                     <button
-                      onClick={() => removeIngredient(index)}
+                      onClick={() => {
+                        if (item) {
+                          setIngredientToDelete(index);
+                        } else {
+                          removeIngredient(index);
+                        }
+                      }}
                       className="text-red-600 p-1 active:bg-red-100 rounded-lg transition-colors"
                     >
                       <Trash2 size={20} strokeWidth={2.5} />
@@ -405,29 +510,82 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           Save Dish
         </button>
 
-        {/* Delete Confirmation */}
-        {showDeleteConfirm && (
+        {item && ingredientToDelete !== null && (
           <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
-              <p className="text-gray-600 mb-6">Are you sure you want to delete this dish?</p>
-              <div className="flex justify-end gap-4">
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to remove{' '}
+                <span className="font-bold text-gray-900">
+                  {ingredients[ingredientToDelete]?.inventoryItemName}
+                </span>{' '}
+                from this dish?
+              </p>
+              <div className="flex justify-end">
                 <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
+                  onClick={() => setIngredientToDelete(null)}
+                  className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    if (item && onDelete) {
-                      onDelete(item.id);
+                    if (ingredientToDelete !== null) {
+                      removeIngredient(ingredientToDelete);
                     }
-                    setShowDeleteConfirm(false);
+                    setIngredientToDelete(null);
                   }}
                   className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
                 >
                   Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation */}
+        {showDeleteConfirm && (
+          <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full mx-4">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
+              <p className="text-gray-600 mb-3">
+                Are you sure you want to delete this dish from your menu.
+              </p>
+              <p className="text-gray-600 mb-6">
+                If this dish has sales history, do you want to keep those sales records or delete them too?
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={async () => {
+                    if (item && onDelete) {
+                      await onDelete(item.id, 'keep');
+                    }
+                    setShowDeleteConfirm(false);
+                  }}
+                  className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold active:bg-orange-700 transition-colors"
+                >
+                  Delete Dish, Keep Sales History
+                </button>
+
+                <button
+                  onClick={async () => {
+                    if (item && onDelete) {
+                      await onDelete(item.id, 'delete');
+                    }
+                    setShowDeleteConfirm(false);
+                  }}
+                  className="w-full bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
+                >
+                  Delete Dish and Sales History
+                </button>
+
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

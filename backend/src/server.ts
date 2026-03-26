@@ -3,6 +3,7 @@ import express from "express";
 import type { Response } from "express";
 import cors from "cors";
 import multer from "multer";
+import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "./generated/prisma/client.js";
 
@@ -12,7 +13,8 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is not set");
 }
 
-const adapter = new PrismaPg({ connectionString });
+const pool = new pg.Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -23,7 +25,7 @@ type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure;
 
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -107,6 +109,27 @@ const normalizePendingRestock = (value: unknown) => {
   };
 };
 
+const convertUnitQuantity = (
+  quantity: number,
+  fromUnit: string,
+  toUnit: string
+): number | null => {
+  if (fromUnit === toUnit) return quantity;
+
+  if (fromUnit === 'g' && toUnit === 'kg') return quantity / 1000;
+  if (fromUnit === 'kg' && toUnit === 'g') return quantity * 1000;
+
+  if (fromUnit === 'ml' && toUnit === 'L') return quantity / 1000;
+  if (fromUnit === 'L' && toUnit === 'ml') return quantity * 1000;
+
+  return null;
+};
+
+const roundQuantity = (value: number, decimals = 3) => {
+  const factor = 10 ** decimals;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+};
+
 type PendingRestockPayload = {
   quantity: number;
   supplier: string;
@@ -123,6 +146,7 @@ type InventoryPayload = {
   supplier: string;
   targetPrice: number;
   pendingRestock: PendingRestockPayload | null;
+  image: string | null;
 };
 
 const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayload> => {
@@ -138,6 +162,8 @@ const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayl
   const supplier = normalizeString(body.supplier);
   const targetPrice = normalizeNumber(body.targetPrice);
   const pendingRestock = normalizePendingRestock(body.pendingRestock);
+  const imageValue = normalizeString(body.image);
+  const image = imageValue.length > 0 ? imageValue : null;
 
   if (!name || !category || !unit || !supplier) {
     return {
@@ -165,6 +191,7 @@ const validateInventoryPayload = (body: unknown): ValidationResult<InventoryPayl
       supplier,
       targetPrice,
       pendingRestock,
+      image,
     },
   };
 };
@@ -175,11 +202,12 @@ const toInventoryItemData = (
   return {
     name: payload.name,
     category: payload.category,
-    quantity: payload.quantity,
+    quantity: roundQuantity(payload.quantity),
     unit: payload.unit,
-    minQuantity: payload.minQuantity,
+    minQuantity: roundQuantity(payload.minQuantity),
     supplier: payload.supplier,
     targetPrice: payload.targetPrice,
+    image: payload.image,
     pendingRestock:
       payload.pendingRestock === null
         ? Prisma.DbNull
@@ -455,12 +483,19 @@ app.patch("/api/inventory/:id/quantity", async (req, res) => {
   }
 
   try {
+    const existingItem = await prisma.inventoryItem.findUnique({
+      where: { id: req.params.id },
+      select: { quantity: true },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: "Inventory item not found." });
+    }
+
     const updatedItem = await prisma.inventoryItem.update({
       where: { id: req.params.id },
       data: {
-        quantity: {
-          increment: quantityDelta,
-        },
+        quantity: roundQuantity(existingItem.quantity + quantityDelta),
       },
     });
 
@@ -637,20 +672,35 @@ app.put("/api/menu/:id", async (req, res) => {
 });
 
 app.delete("/api/menu/:id", async (req, res) => {
+  const salesAction =
+    req.query.salesAction === "delete" ? "delete" : "keep";
+
   try {
-    const salesCount = await prisma.saleRecord.count({
-      where: { menuItemId: req.params.id },
-    });
-
-    if (salesCount > 0) {
-      return res.status(409).json({
-        error: "Cannot delete menu item because it already has sales history.",
-      });
-    }
-
-    const deletedMenuItem = await prisma.menuItem.delete({
+    const existingMenuItem = await prisma.menuItem.findUnique({
       where: { id: req.params.id },
       include: { ingredients: true },
+    });
+
+    if (!existingMenuItem) {
+      return res.status(404).json({ error: "Menu item not found." });
+    }
+
+    const deletedMenuItem = await prisma.$transaction(async (tx) => {
+      if (salesAction === "delete") {
+        await tx.saleRecord.deleteMany({
+          where: { menuItemId: req.params.id },
+        });
+      } else {
+        await tx.saleRecord.updateMany({
+          where: { menuItemId: req.params.id },
+          data: { menuItemId: null },
+        });
+      }
+
+      return tx.menuItem.delete({
+        where: { id: req.params.id },
+        include: { ingredients: true },
+      });
     });
 
     return res.json(deletedMenuItem);
@@ -905,7 +955,14 @@ app.get("/api/sales", async (req, res) => {
       orderBy: { timestamp: "desc" },
     });
 
-    return res.json(sales);
+    // Normalise timestamps to explicit UTC ISO strings so browsers never
+    // misinterpret a missing-Z timestamp as local time (which would show 8 hrs off in SGT).
+    const normalised = sales.map(s => ({
+      ...s,
+      timestamp: s.timestamp instanceof Date ? s.timestamp.toISOString() : String(s.timestamp),
+    }));
+
+    return res.json(normalised);
   } catch (error) {
     return sendInternalError(res, "Failed to fetch sales history.", error);
   }
@@ -949,42 +1006,69 @@ app.post("/api/sales", async (req, res) => {
       return res.status(404).json({ error: "Menu item not found." });
     }
 
-    // Pre-compute deductions (with unit conversion) and validate stock
-    type Deduction = { inventoryItemId: string; amount: number };
-    const deductions: Deduction[] = [];
+    const ingredientDeductions: Array<{
+      inventoryItemId: string;
+      totalDeduction: number;
+    }> = [];
 
     for (const ingredient of menuItem.ingredients) {
-      const factor = getUnitConversionFactor(ingredient.unit, ingredient.inventoryItem.unit);
-      if (factor === null) {
+      const quantityPerPortionInInventoryUnit = convertUnitQuantity(
+        ingredient.quantity,
+        ingredient.unit,
+        ingredient.inventoryItem.unit
+      );
+
+      if (quantityPerPortionInInventoryUnit === null) {
         return res.status(400).json({
-          error: `Cannot convert ${ingredient.unit} to ${ingredient.inventoryItem.unit} for ${ingredient.inventoryItemName}. Please fix the recipe or inventory units.`,
+          error: `Unit mismatch for ${ingredient.inventoryItemName}: recipe uses ${ingredient.unit}, inventory uses ${ingredient.inventoryItem.unit}.`,
         });
       }
-
-      const recipeAmountInInventoryUnit = ingredient.quantity * factor;
-      const totalDeduction = recipeAmountInInventoryUnit * payload.data.quantity;
+      
+      const totalDeduction = roundQuantity(
+        quantityPerPortionInInventoryUnit * payload.data.quantity
+      );
 
       if (ingredient.inventoryItem.quantity < totalDeduction) {
         return res.status(400).json({
-          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction.toFixed(4)} ${ingredient.inventoryItem.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
+          error: `Not enough stock for ${ingredient.inventoryItemName}. Required ${totalDeduction} ${ingredient.inventoryItem.unit}, available ${ingredient.inventoryItem.quantity} ${ingredient.inventoryItem.unit}.`,
         });
       }
 
-      deductions.push({ inventoryItemId: ingredient.inventoryItemId, amount: totalDeduction });
+      ingredientDeductions.push({
+        inventoryItemId: ingredient.inventoryItemId,
+        totalDeduction,
+      });
     }
 
     const result = await prisma.$transaction(async (tx) => {
       const sale = await tx.saleRecord.create({
-        data: payload.data,
+        data: {
+          ...{
+          ...payload.data,
+          menuItemPrice: menuItem.price,
+          timestamp: new Date(), // explicitly set so the DB stores the correct UTC moment
+        },
+        },
       });
 
-      for (const deduction of deductions) {
+      for (const deduction of ingredientDeductions) {
+        const currentItem = await tx.inventoryItem.findUnique({
+          where: { id: deduction.inventoryItemId },
+          select: { quantity: true },
+        });
+
+        if (!currentItem) {
+          throw new Error(`Inventory item not found: ${deduction.inventoryItemId}`);
+        }
+
+        const nextQuantity = roundQuantity(
+          currentItem.quantity - deduction.totalDeduction
+        );
+
         await tx.inventoryItem.update({
           where: { id: deduction.inventoryItemId },
           data: {
-            quantity: {
-              decrement: deduction.amount,
-            },
+            quantity: nextQuantity,
           },
         });
       }
@@ -992,9 +1076,18 @@ app.post("/api/sales", async (req, res) => {
       return sale;
     });
 
+    // Ensure timestamp is returned as an explicit UTC ISO string (with Z suffix)
+    // so browsers never misinterpret it as local time.
+    const saleWithUtcTimestamp = {
+      ...result,
+      timestamp: result.timestamp instanceof Date
+        ? result.timestamp.toISOString()
+        : String(result.timestamp),
+    };
+
     return res.status(201).json({
       message: "Sale recorded and inventory updated.",
-      sale: result,
+      sale: saleWithUtcTimestamp,
     });
   } catch (error) {
     return sendInternalError(res, "Failed to record sale.", error);
@@ -1003,17 +1096,28 @@ app.post("/api/sales", async (req, res) => {
 
 app.get('/api/forecast/today', async (req, res) => {
   try {
-    const today = new Date();
-    const currentDayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
-    
-    // 1. Fetch sales from the past 4 weeks to establish a baseline
-    const fourWeeksAgo = new Date();
-    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    // All date logic in SGT (UTC+8) so "today" and day-of-week
+    // match what the hawker stall owner sees on their phone.
+    const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+    const nowSgt = new Date(Date.now() + SGT_OFFSET_MS);
+
+    // Day of week in SGT (0 = Sunday … 6 = Saturday)
+    const currentDayOfWeek = nowSgt.getUTCDay();
+
+    // SGT midnight expressed as UTC — any sale on/after this is "today" and excluded.
+    const sgtMidnightUtc = new Date(
+      Date.UTC(nowSgt.getUTCFullYear(), nowSgt.getUTCMonth(), nowSgt.getUTCDate()) - SGT_OFFSET_MS
+    );
+
+    const fourWeeksAgoUtc = new Date(sgtMidnightUtc);
+    fourWeeksAgoUtc.setUTCDate(fourWeeksAgoUtc.getUTCDate() - 28);
 
     const historicalSales = await prisma.saleRecord.findMany({
       where: {
         timestamp: {
-          gte: fourWeeksAgo
+          gte: fourWeeksAgoUtc,
+          lt: sgtMidnightUtc, // strictly before SGT midnight — today's sales never affect the forecast
         }
       },
       include: {
@@ -1028,14 +1132,21 @@ app.get('/api/forecast/today', async (req, res) => {
       sale => new Date(sale.timestamp).getDay() === currentDayOfWeek
     );
 
-    // 3. Aggregate total portions sold per menu item over those 4 matching days
+    // 3. Aggregate total portions sold per menu item
     const dishSalesCounts: Record<string, { totalQuantity: number, menuItem: any }> = {};
 
-    sameDaySales.forEach(sale => {
-      if (!dishSalesCounts[sale.menuItemId]) {
-        dishSalesCounts[sale.menuItemId] = { totalQuantity: 0, menuItem: sale.menuItem };
+    sameDaySales.forEach((sale) => {
+      const existingEntry = dishSalesCounts[sale.menuItemId];
+
+      if (existingEntry) {
+        existingEntry.totalQuantity += sale.quantity;
+        return;
       }
-      dishSalesCounts[sale.menuItemId].totalQuantity += sale.quantity;
+
+      dishSalesCounts[sale.menuItemId] = {
+        totalQuantity: sale.quantity,
+        menuItem: sale.menuItem,
+      };
     });
 
     const prepRecommendations = [];
@@ -1107,7 +1218,7 @@ app.get('/api/forecast/today', async (req, res) => {
 
     // 6. Return payload matching frontend expectations
     res.json({
-      date: today.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }),
+      date: nowSgt.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
       weather: 'Rainy',
       confidence: 'High (85%)',
       predictedSales: totalPredictedSales.toFixed(2),
@@ -1182,6 +1293,49 @@ app.post('/api/voice/transcribe', upload.single('audio'), async (req: any, res: 
     res.json({ transcript });
   } catch (error) {
     sendInternalError(res, 'Failed to transcribe audio', error);
+  }
+});
+
+app.get("/api/settings", async (_req, res) => {
+  try {
+    // @ts-ignore - StallSettings might not be in generated types yet
+    let settings = await (prisma as any).stallSettings.findFirst();
+    
+    // Create default settings if none exist
+    if (!settings) {
+      settings = await (prisma as any).stallSettings.create({ data: {} });
+    }
+    
+    return res.json(settings);
+  } catch (error) {
+    return sendInternalError(res, "Failed to fetch settings.", error);
+  }
+});
+
+app.put("/api/settings", async (req, res) => {
+  try {
+    const { stallName, ownerName, location, lowStockAlerts, currency, language } = req.body;
+    
+    let settings = await (prisma as any).stallSettings.findFirst();
+    if (!settings) {
+      settings = await (prisma as any).stallSettings.create({ data: {} });
+    }
+    
+    const updatedSettings = await (prisma as any).stallSettings.update({
+      where: { id: settings.id },
+      data: {
+        stallName: typeof stallName === 'string' ? stallName : settings.stallName,
+        ownerName: typeof ownerName === 'string' ? ownerName : settings.ownerName,
+        location: typeof location === 'string' ? location : settings.location,
+        lowStockAlerts: typeof lowStockAlerts === 'boolean' ? lowStockAlerts : settings.lowStockAlerts,
+        currency: typeof currency === 'string' ? currency : settings.currency,
+        language: typeof language === 'string' ? language : settings.language,
+      }
+    });
+    
+    return res.json(updatedSettings);
+  } catch (error) {
+    return sendInternalError(res, "Failed to update settings.", error);
   }
 });
 

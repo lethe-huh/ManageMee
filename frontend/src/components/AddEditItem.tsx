@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Trash2 } from 'lucide-react';
-import * as api from '../api';
+import { X, Save, Trash2, Plus, Edit2 } from 'lucide-react';
 import { InventoryItem, Supplier } from '../types/inventory';
+import { createSupplier, getSuppliers } from '../services/suppliers';
 import { categories, getUnitsForCategory } from '../data/constants';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseIngredientTranscript } from '../utils/voiceParsers';
@@ -9,12 +9,13 @@ import microphoneImg from '../assets/microphone.png';
 
 interface AddEditItemProps {
   item?: InventoryItem | null;
-  onSave: (item: any) => void;
-  onDelete?: (id: string) => void;
+  onSave: (item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventoryItem) => void | Promise<void>;
   onCancel: () => void;
+  onDelete?: (id: string) => void | Promise<void>;
+  isDeleteDisabled?: boolean;
 }
 
-export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEditItemProps) {
+export default function AddEditItem({ item, onSave, onCancel, onDelete, isDeleteDisabled = false }: AddEditItemProps) {
   const [formData, setFormData] = useState({
     name: item?.name || '',
     category: item?.category || '',
@@ -24,41 +25,50 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
     supplier: item?.supplier || '',
     targetPrice: item?.targetPrice?.toString() || ''
   });
+  const [itemImage, setItemImage] = useState<string | undefined>((item as any)?.image);
+  const [itemImagePreview, setItemImagePreview] = useState<string | undefined>((item as any)?.image);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [showNewSupplierInput, setShowNewSupplierInput] = useState(false);
+  const [supplierOptions, setSupplierOptions] = useState<Supplier[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const { voiceState, transcript, voiceError, toggle, resultCount } = useVoiceInput();
 
-  useEffect(() => {
-    api.fetchSuppliers().then(setSuppliers).catch(() => {});
-  }, []);
-
   // Populate form fields when voice transcript is ready.
-  // Depends on resultCount (incremented per transcription) so re-recording
-  // the same phrase still re-applies the parsed values.
   useEffect(() => {
     if (voiceState === 'done' && transcript) {
       const parsed = parseIngredientTranscript(
         transcript,
-        suppliers.map((s) => s.name),
+        supplierOptions.map((s) => s.name),
         categories
       );
       setFormData((prev) => ({
         ...prev,
-        ...(parsed.name      && { name: parsed.name }),
-        ...(parsed.category  && { category: parsed.category }),
-        ...(parsed.quantity  && { quantity: parsed.quantity }),
-        ...(parsed.unit      && { unit: parsed.unit }),
+        ...(parsed.name        && { name: parsed.name }),
+        ...(parsed.category    && { category: parsed.category }),
+        ...(parsed.quantity    && { quantity: parsed.quantity }),
+        ...(parsed.unit        && { unit: parsed.unit }),
         ...(parsed.minQuantity && { minQuantity: parsed.minQuantity }),
-        ...(parsed.supplier  && { supplier: parsed.supplier }),
+        ...(parsed.supplier    && { supplier: parsed.supplier }),
         ...(parsed.targetPrice && { targetPrice: parsed.targetPrice }),
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultCount, suppliers]);
+  }, [resultCount, supplierOptions]);
 
   const availableUnits = getUnitsForCategory(formData.category);
+
+  useEffect(() => {
+    const loadSuppliers = async () => {
+      try {
+        const backendSuppliers = await getSuppliers();
+        setSupplierOptions(backendSuppliers);
+      } catch (error) {
+        console.error('Failed to load suppliers:', error);
+      }
+    };
+
+    void loadSuppliers();
+  }, []);
 
   // Update unit when category changes if current unit is not available
   useEffect(() => {
@@ -67,9 +77,125 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
     }
   }, [formData.category, formData.unit, availableUnits]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    return () => {
+      if (itemImagePreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(itemImagePreview);
+      }
+    };
+  }, [itemImagePreview]);
+
+  const resizeImageToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load image.'));
+      };
+
+      img.onload = () => {
+        try {
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+
+          let { width, height } = img;
+
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            const scale = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Failed to process image.'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL('image/jpeg', 0.7);
+
+          URL.revokeObjectURL(objectUrl);
+          resolve(compressed);
+        } catch (error) {
+          URL.revokeObjectURL(objectUrl);
+          reject(error);
+        }
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previousImage = itemImage;
+    const previousPreview = itemImagePreview;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setItemImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    try {
+      const compressedImage = await resizeImageToDataUrl(file);
+      setItemImage(compressedImage);
+    } catch (error) {
+      console.error('Failed to process image:', error);
+      setItemImage(previousImage);
+      setItemImagePreview(previousPreview);
+      alert('Failed to process image.');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    let supplierName = formData.supplier;
+
+    if (showNewSupplierInput) {
+      const trimmedName = newSupplierName.trim();
+
+      if (!trimmedName) {
+        alert('Please enter a supplier name.');
+        return;
+      }
+
+      const existingSupplier = supplierOptions.find(
+        (supplier) => supplier.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      );
+
+      if (existingSupplier) {
+        supplierName = existingSupplier.name;
+      } else {
+        try {
+          const createdSupplier = await createSupplier({
+            name: trimmedName,
+            phone: '-',
+            items: [],
+          });
+
+          setSupplierOptions((prev) => [...prev, createdSupplier]);
+          supplierName = createdSupplier.name;
+        } catch (error) {
+          console.error('Failed to create supplier:', error);
+          alert('Failed to create supplier.');
+          return;
+        }
+      }
+    }
+
     const itemData = {
       ...item,
       name: formData.name,
@@ -77,21 +203,16 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
       quantity: parseFloat(formData.quantity),
       unit: formData.unit,
       minQuantity: parseFloat(formData.minQuantity),
-      supplier: formData.supplier,
+      supplier: supplierName,
       targetPrice: parseFloat(formData.targetPrice) || 0,
+      image: itemImage ?? null,
       lastUpdated: new Date().toISOString()
     };
 
-    onSave(itemData);
+    await onSave(itemData as InventoryItem);
   };
 
-  const handleAddSupplier = () => {
-    if (newSupplierName.trim()) {
-      setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
-      setNewSupplierName('');
-      setShowNewSupplierInput(false);
-    }
-  };
+  const displayedImage = itemImagePreview || itemImage;
 
   return (
     <div className="p-3">
@@ -106,6 +227,43 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
         >
           <X size={32} strokeWidth={2.5} />
         </button>
+      </div>
+
+      {/* Item Image Upload */}
+      <div className="mb-6 flex justify-center">
+        <div className="relative">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            className="hidden"
+            id="item-image-upload"
+          />
+          <label
+            htmlFor="item-image-upload"
+            className="inline-block cursor-pointer"
+          >
+            {displayedImage ? (
+              <div className="relative w-32 h-32 rounded-xl border-2 border-gray-300 overflow-hidden group shadow-sm">
+                <img
+                  src={displayedImage}
+                  alt="Ingredient preview"
+                  className="w-full h-full object-cover rounded-xl"
+                />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="bg-white rounded-full p-2 opacity-0 group-active:opacity-100 transition-opacity shadow-sm">
+                    <Edit2 size={24} strokeWidth={2.5} className="text-gray-900" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="w-32 h-32 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center active:bg-gray-100 transition-colors shadow-sm">
+                <Plus size={36} strokeWidth={2.5} className="text-gray-400 mb-2" />
+                <span className="text-xs font-bold text-gray-500">Add Photo</span>
+              </div>
+            )}
+          </label>
+        </div>
       </div>
 
       {/* Voice input button */}
@@ -160,9 +318,8 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
           {voiceState === 'recording' ? 'Tap again when done speaking…' : 'Sending to Google Speech-to-Text…'}
         </p>
       )}
-
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-4 pb-24">
         {/* Item Name */}
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
@@ -252,39 +409,37 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Supplier *
           </label>
+
           <select
-              required
-              value={formData.supplier || ''}
-              onChange={(e) => {
-                if (e.target.value === 'ADD_NEW') {
-                  setFormData({ ...formData, supplier: '' });
-                  setNewSupplierName('');
-                  setShowNewSupplierInput(true);
-                } else {
-                  setFormData({ ...formData, supplier: e.target.value });
-                  setShowNewSupplierInput(false);
-                }
-              }}
-              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-            >
-              <option value="">Select supplier</option>
-              {suppliers.map(supplier => (
-                <option key={supplier.id} value={supplier.name}>{supplier.name}</option>
-              ))}
-              <option value="ADD_NEW">+ Add New Supplier...</option>
-            </select>
+            required={!showNewSupplierInput}
+            value={showNewSupplierInput ? 'ADD_NEW' : formData.supplier || ''}
+            onChange={(e) => {
+              if (e.target.value === 'ADD_NEW') {
+                setFormData({ ...formData, supplier: '' });
+                setNewSupplierName('');
+                setShowNewSupplierInput(true);
+              } else {
+                setFormData({ ...formData, supplier: e.target.value });
+                setShowNewSupplierInput(false);
+              }
+            }}
+            className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+          >
+            <option value="">Select supplier</option>
+            {supplierOptions.map((supplier) => (
+              <option key={supplier.id} value={supplier.name}>
+                {supplier.name}
+              </option>
+            ))}
+            <option value="ADD_NEW">+ Add New Supplier...</option>
+          </select>
+
           {showNewSupplierInput && (
             <input
               type="text"
+              required
               value={newSupplierName}
               onChange={(e) => setNewSupplierName(e.target.value)}
-              onBlur={handleAddSupplier}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddSupplier();
-                }
-              }}
               placeholder="New supplier name"
               autoFocus
               className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600 mt-2"
@@ -311,6 +466,29 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
             />
           </div>
         </div>
+
+        {/* Delete Button */}
+        {item && onDelete && (
+          <button
+            type="button"
+            disabled={isDeleteDisabled}
+            onClick={() => {
+              if (!isDeleteDisabled) {
+                setShowDeleteConfirm(true);
+              }
+            }}
+            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mt-6 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <Trash2 size={28} strokeWidth={2.5} />
+            Delete Ingredient
+          </button>
+        )}
+
+        {item && isDeleteDisabled && (
+          <p className="text-sm text-gray-600 mt-2">
+            This ingredient cannot be deleted because it is used in a dish.
+          </p>
+        )}
 
         {/* Save Button */}
         <button
@@ -357,6 +535,40 @@ export default function AddEditItem({ item, onSave, onDelete, onCancel }: AddEdi
           </>
         )}
       </form>
+
+      {item && onDelete && !isDeleteDisabled && showDeleteConfirm && (
+        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this ingredient?
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await onDelete(item.id);
+                    setShowDeleteConfirm(false);
+                  } catch (error) {
+                    console.error('Failed to delete ingredient:', error);
+                  }
+                }}
+                className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
