@@ -14,7 +14,8 @@ if (!connectionString) {
 }
 
 const pool = new pg.Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const adapter = new PrismaPg(pool as any);
 const prisma = new PrismaClient({ adapter });
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -1136,6 +1137,7 @@ app.get('/api/forecast/today', async (req, res) => {
     const dishSalesCounts: Record<string, { totalQuantity: number, menuItem: any }> = {};
 
     sameDaySales.forEach((sale) => {
+      if (!sale.menuItemId) return;
       const existingEntry = dishSalesCounts[sale.menuItemId];
 
       if (existingEntry) {
