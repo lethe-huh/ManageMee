@@ -5,7 +5,8 @@ import { InventoryItem } from '../types/inventory';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseDishTranscript } from '../utils/voiceParsers';
 import microphoneImg from '../assets/microphone.png';
-import { getStoredStallCategories } from '../services/auth';
+import { getStoredStallCategories, setStoredStallCategoryList } from '../services/auth';
+import { apiRequest } from '../services/api';
 
 interface EditMenuItemProps {
   item?: MenuItem | null;
@@ -22,11 +23,21 @@ const normalizeToSmallestUnit = (quantity: number, unit: string) => {
 }
 
 export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, onDelete }: EditMenuItemProps) {
-  const configuredDishCategories = getStoredStallCategories();
-  const initialDishType = item?.category || configuredDishCategories[0] || 'Other';
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(() =>
+    Array.from(
+      new Set([
+        ...getStoredStallCategories(),
+        ...(item?.category ? [item.category] : []),
+      ]),
+    ),
+  );
+
+  const initialDishType = item?.category || categoryOptions[0] || 'Other';
 
   const [dishName, setDishName] = useState(item?.name || '');
   const [dishType, setDishType] = useState(initialDishType);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
   const [dishImage, setDishImage] = useState<string | undefined>(item?.image);
   const [dishImagePreview, setDishImagePreview] = useState<string | undefined>(item?.image);
@@ -57,13 +68,11 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultCount]);
   const [ingredientToDelete, setIngredientToDelete] = useState<number | null>(null);
-  const dishCategoryOptions = Array.from(
-    new Set([
-      ...configuredDishCategories,
-      ...(item?.category ? [item.category] : []),
-      ...(dishType ? [dishType] : []),
-    ]),
-  );
+  useEffect(() => {
+    if (dishType && !categoryOptions.some((category) => category.toLowerCase() === dishType.toLowerCase())) {
+      setCategoryOptions((prev) => [...prev, dishType]);
+    }
+  }, [dishType, categoryOptions]);
 
   useEffect(() => {
   return () => {
@@ -72,6 +81,53 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
     }
   };
 }, [dishImagePreview]);
+
+  const persistNewDishCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+
+    if (!trimmedName) {
+      alert('Please enter a category name.');
+      return null;
+    }
+
+    const existingCategory = categoryOptions.find(
+      (category) => category.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+
+    if (existingCategory) {
+      const nextCategories = Array.from(new Set([...categoryOptions, existingCategory]));
+      setCategoryOptions(nextCategories);
+      setStoredStallCategoryList('stallCategories', nextCategories);
+      setDishType(existingCategory);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return existingCategory;
+    }
+
+    try {
+      const updated = await apiRequest<{ stallCategories?: string[] }>(`/api/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          stallCategories: [...categoryOptions, trimmedName],
+        }),
+      });
+
+      const nextCategories = setStoredStallCategoryList(
+        'stallCategories',
+        updated.stallCategories ?? [...categoryOptions, trimmedName],
+      );
+
+      setCategoryOptions(nextCategories);
+      setDishType(trimmedName);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return trimmedName;
+    } catch (error) {
+      console.error('Failed to create dish category:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create category.');
+      return null;
+    }
+  };
 
   const resizeImageToDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -148,11 +204,21 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   };
 
   const handleSave = async () => {
+    let selectedCategory = dishType;
+
+    if (showNewCategoryInput) {
+      const createdCategory = await persistNewDishCategory();
+      if (!createdCategory) {
+        return;
+      }
+      selectedCategory = createdCategory;
+    }
+
     const menuItem = {
       ...(item ? { id: item.id } : {}),
       name: dishName,
       price: parseFloat(price),
-      category: dishType,
+      category: selectedCategory,
       ingredients,
       image: dishImage ?? null,
     };
@@ -454,16 +520,40 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           <div className="mb-4">
             <label className="block text-gray-900 font-bold mb-2 text-lg">Category *</label>
             <select
-              value={dishType}
-              onChange={(e) => setDishType(e.target.value)}
+              required={!showNewCategoryInput}
+              value={showNewCategoryInput ? 'ADD_NEW_CATEGORY' : dishType}
+              onChange={(e) => {
+                if (e.target.value === 'ADD_NEW_CATEGORY') {
+                  setDishType('');
+                  setNewCategoryName('');
+                  setShowNewCategoryInput(true);
+                } else {
+                  setDishType(e.target.value);
+                  setShowNewCategoryInput(false);
+                }
+              }}
               className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
             >
-              {dishCategoryOptions.map((category) => (
+              <option value="">Select category</option>
+              {categoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
               ))}
+              <option value="ADD_NEW_CATEGORY">+ Add New Category...</option>
             </select>
+
+            {showNewCategoryInput && (
+              <input
+                type="text"
+                required
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="New dish category"
+                autoFocus
+                className="mt-2 w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+              />
+            )}
           </div>
 
           {/* Selling Price */}

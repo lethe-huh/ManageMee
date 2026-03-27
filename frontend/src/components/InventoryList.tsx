@@ -6,6 +6,7 @@ import LowStockAlert from './LowStockAlert';
 import RestockModal from './RestockModal';
 import { InventoryItem, InventoryItemPayload, PendingRestock } from '../types/inventory';
 import { createInventoryItem, deleteInventoryItem, getInventory, updateInventoryItem } from '../services/inventory';
+import { createSupplierPrice, getSupplierPrices, updateSupplierPrice } from '../services/supplierPrices';
 import { getMenuItems } from '../services/menu';
 import type { MenuItem } from '../types/menu';
 
@@ -14,6 +15,13 @@ interface InventoryListProps {
   onFormStateChange?: (isOpen: boolean) => void;
 }
 
+type InventorySavePayload = InventoryItemPayload & {
+  supplierId?: string;
+  supplierContact?: string;
+  supplierPrice?: number | null;
+  image?: string | null;
+};
+
 const sortInventoryItems = (items: InventoryItem[]) =>
   [...items].sort((a, b) => {
     const categoryCompare = a.category.localeCompare(b.category);
@@ -21,15 +29,13 @@ const sortInventoryItems = (items: InventoryItem[]) =>
       return categoryCompare;
     }
 
-  return a.name.localeCompare(b.name);
-});
+    return a.name.localeCompare(b.name);
+  });
 
-const formatQuantity = (value: number) => {
-  return Number(value.toFixed(3)).toString();
-};
-  
+const formatQuantity = (value: number) => Number(value.toFixed(3)).toString();
+
 const toInventoryPayload = (
-  item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventoryItemPayload,
+  item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventorySavePayload,
 ): InventoryItemPayload => ({
   name: item.name,
   category: item.category,
@@ -39,8 +45,8 @@ const toInventoryPayload = (
   supplier: item.supplier,
   targetPrice: item.targetPrice,
   pendingRestock: item.pendingRestock ?? null,
-  image: (item as any).image ?? null,
-} as any);
+  image: (item as { image?: string | null }).image ?? null,
+});
 
 export default function InventoryList({ initialSubTab = 'stock', onFormStateChange }: InventoryListProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,42 +81,37 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   const loadInventory = useCallback(async () => {
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-      
-      // Fetch inventory and today's forecast in parallel for performance
+
       const [inventory, forecastRes] = await Promise.all([
         getInventory(),
-        fetch(`${API_URL}/forecast/today`).catch(() => null)
+        fetch(`${API_URL}/forecast/today`).catch(() => null),
       ]);
 
-      let forecastMinMap = new Map<string, number>();
-      
-      // Extract the dynamic ingredients needed from the forecast
+      const forecastMinMap = new Map<string, number>();
+
       if (forecastRes && forecastRes.ok) {
         const forecastData = await forecastRes.json();
         if (forecastData.ingredientsNeeded) {
-          forecastData.ingredientsNeeded.forEach((ing: any) => {
-            forecastMinMap.set(ing.id, ing.quantity);
+          forecastData.ingredientsNeeded.forEach((ingredient: { id: string; quantity: number }) => {
+            forecastMinMap.set(ingredient.id, ingredient.quantity);
           });
         }
       }
 
-      // Sync inventory minQuantity with the forecast
-      const syncedInventory = inventory.map(item => {
+      const syncedInventory = inventory.map((item) => {
         const forecastedMin = forecastMinMap.get(item.id);
         return {
           ...item,
-          // Override minQuantity with forecast if available, otherwise fallback to database default
-          minQuantity: forecastedMin !== undefined ? Number(forecastedMin.toFixed(3)) : item.minQuantity
+          minQuantity: forecastedMin !== undefined ? Number(forecastedMin.toFixed(3)) : item.minQuantity,
         };
       });
 
-      const sorted = sortInventoryItems(syncedInventory);
-      setItems(sorted);
+      setItems(sortInventoryItems(syncedInventory));
     } catch (error) {
       console.error('Failed to load inventory:', error);
     }
   }, []);
-  
+
   const loadMenuItems = useCallback(async () => {
     try {
       const menu = await getMenuItems();
@@ -138,19 +139,16 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     setCollapsedCategories(collapsed);
   }, [items, configuredIngredientCategories]);
 
-
-
-  // Show low-stock alert once per session (fires after data loads)
   useEffect(() => {
     const hasShownAlert = sessionStorage.getItem('lowStockAlertShown');
     if (!hasShownAlert && items.length > 0) {
-      const lowStockItems = items.filter(item => item.quantity < item.minQuantity);
+      const lowStockItems = items.filter((item) => item.quantity < item.minQuantity);
       if (lowStockItems.length > 0) {
         setShowLowStockAlert(true);
         sessionStorage.setItem('lowStockAlertShown', 'true');
       }
     }
-  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items]);
 
   const filteredItems = useMemo(
     () =>
@@ -162,16 +160,61 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     [items, searchQuery],
   );
 
+  const syncSupplierPrice = useCallback(
+    async (savedItem: InventoryItem, rawItem: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventorySavePayload) => {
+      const item = rawItem as InventorySavePayload;
+
+      if (!item.supplierId) {
+        return;
+      }
+
+      if (item.supplierPrice === null || item.supplierPrice === undefined || item.supplierPrice === '') {
+        return;
+      }
+
+      const price = Number(item.supplierPrice);
+      if (!Number.isFinite(price) || price < 0) {
+        return;
+      }
+
+      const existingPrices = await getSupplierPrices(savedItem.id);
+      const matchingPrice = existingPrices.find((entry) => entry.supplierId === item.supplierId);
+      const payload = {
+        supplierId: item.supplierId,
+        inventoryItemId: savedItem.id,
+        price,
+      };
+
+      if (matchingPrice?.id) {
+        await updateSupplierPrice(matchingPrice.id, payload);
+      } else {
+        await createSupplierPrice(payload);
+      }
+    },
+    [],
+  );
+
+  const closeAddEdit = useCallback(() => {
+    setShowAddEdit(false);
+    setEditingItem(null);
+    onFormStateChange?.(false);
+  }, [onFormStateChange]);
+
   const handleAddItem = async (
-    item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventoryItemPayload,
+    item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventorySavePayload,
   ) => {
     try {
       const createdItem = await createInventoryItem(toInventoryPayload(item));
       setItems((prev) => sortInventoryItems([...prev, createdItem]));
-      setShowAddEdit(false);
-      if (onFormStateChange) {
-        onFormStateChange(false);
+
+      try {
+        await syncSupplierPrice(createdItem, item);
+      } catch (error) {
+        console.error('Failed to save supplier price:', error);
+        alert('Ingredient saved, but failed to save supplier pricing.');
       }
+
+      closeAddEdit();
     } catch (error) {
       console.error('Failed to create inventory item:', error);
       alert(error instanceof Error ? error.message : 'Failed to create inventory item.');
@@ -179,7 +222,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   };
 
   const handleEditItem = async (
-    item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventoryItemPayload,
+    item: Omit<InventoryItem, 'id' | 'lastUpdated'> | InventorySavePayload,
   ) => {
     if (!editingItem) {
       return;
@@ -192,11 +235,15 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           prev.map((inventoryItem) => (inventoryItem.id === updatedItem.id ? updatedItem : inventoryItem)),
         ),
       );
-      setShowAddEdit(false);
-      setEditingItem(null);
-      if (onFormStateChange) {
-        onFormStateChange(false);
+
+      try {
+        await syncSupplierPrice(updatedItem, item);
+      } catch (error) {
+        console.error('Failed to update supplier price:', error);
+        alert('Ingredient updated, but failed to save supplier pricing.');
       }
+
+      closeAddEdit();
     } catch (error) {
       console.error('Failed to update inventory item:', error);
       alert(error instanceof Error ? error.message : 'Failed to update inventory item.');
@@ -206,17 +253,11 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   const handleEdit = (item: InventoryItem) => {
     setEditingItem(item);
     setShowAddEdit(true);
-    if (onFormStateChange) {
-      onFormStateChange(true);
-    }
+    onFormStateChange?.(true);
   };
 
   const handleClose = () => {
-    setShowAddEdit(false);
-    setEditingItem(null);
-    if (onFormStateChange) {
-      onFormStateChange(false);
-    }
+    closeAddEdit();
   };
 
   const handleRestockClick = (item: InventoryItem) => {
@@ -247,6 +288,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
         supplier: itemToUpdate.supplier,
         targetPrice: itemToUpdate.targetPrice,
         pendingRestock,
+        image: (itemToUpdate as { image?: string | null }).image ?? null,
       });
 
       setItems((prev) =>
@@ -265,14 +307,8 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   const handleDeleteItem = async (id: string) => {
     try {
       await deleteInventoryItem(id);
-
       setItems((prev) => prev.filter((item) => item.id !== id));
-      setShowAddEdit(false);
-      setEditingItem(null);
-
-      if (onFormStateChange) {
-        onFormStateChange(false);
-      }
+      closeAddEdit();
     } catch (error) {
       console.error('Failed to delete ingredient:', error);
       alert(error instanceof Error ? error.message : 'Failed to delete ingredient.');
@@ -286,7 +322,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   };
 
   const toggleCategoryCollapse = (category: string) => {
-    setCollapsedCategories(prev => {
+    setCollapsedCategories((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(category)) {
         newSet.delete(category);
@@ -297,9 +333,8 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     });
   };
 
-  // Show low stock alert modal
   if (showLowStockAlert) {
-    const lowStockItems = items.filter(item => item.quantity < item.minQuantity);
+    const lowStockItems = items.filter((item) => item.quantity < item.minQuantity);
     return (
       <LowStockAlert
         lowStockItems={lowStockItems}
@@ -312,7 +347,6 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     );
   }
 
-  // Show restock modal
   if (showRestockModal && restockingItem) {
     return (
       <RestockModal
@@ -327,12 +361,10 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   }
 
   const isEditingItemUsedInDish =
-  !!editingItem &&
-  menuItems.some((menuItem) =>
-    menuItem.ingredients.some(
-      (ingredient) => ingredient.inventoryItemId === editingItem.id
-    )
-  );
+    !!editingItem &&
+    menuItems.some((menuItem) =>
+      menuItem.ingredients.some((ingredient) => ingredient.inventoryItemId === editingItem.id),
+    );
 
   if (showAddEdit) {
     return (
@@ -346,30 +378,15 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     );
   }
 
-  // Group items by category
-  const groupedItems = filteredItems.reduce((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = [];
-    }
-    acc[item.category].push(item);
-    return acc;
-  }, {} as Record<string, InventoryItem[]>);
-
-  // For restock tab: separate low stock and optional restock items
-  const lowStockItems = activeTab === 'restock' 
-    ? filteredItems.filter(item => item.quantity < item.minQuantity)
+  const lowStockItems = activeTab === 'restock'
+    ? filteredItems.filter((item) => item.quantity < item.minQuantity)
     : [];
-  
+
   const optionalRestockItems = activeTab === 'restock'
-    ? filteredItems.filter(item => item.quantity >= item.minQuantity)
+    ? filteredItems.filter((item) => item.quantity >= item.minQuantity)
     : [];
 
-  // Filter items based on active tab
-  const displayItems = activeTab === 'restock' 
-    ? filteredItems
-    : filteredItems;
-
-  const displayGroupedItems = (activeTab === 'overview' ? displayItems : lowStockItems).reduce((acc, item) => {
+  const displayGroupedItems = (activeTab === 'overview' ? filteredItems : lowStockItems).reduce((acc, item) => {
     if (!acc[item.category]) {
       acc[item.category] = [];
     }
@@ -385,21 +402,30 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     return acc;
   }, {} as Record<string, InventoryItem[]>);
 
-  const lowStockCount = items.filter(item => item.quantity < item.minQuantity).length;
+  const visibleLowStockCategories =
+    activeTab === 'restock'
+      ? configuredIngredientCategories.filter(
+          (category) => (displayGroupedItems[category] || []).length > 0,
+        )
+      : configuredIngredientCategories;
+
+  const visibleOptionalCategories = configuredIngredientCategories.filter(
+    (category) => (optionalGroupedItems[category] || []).length > 0,
+  );
+
+  const lowStockCount = items.filter((item) => item.quantity < item.minQuantity).length;
 
   return (
     <div className="p-4 pb-24">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="bg-orange-600 rounded-lg p-4 mb-4">
+      <div className="mb-3">
+        <div className="bg-orange-600 rounded-lg p-4 mb-3">
           <h1 className="text-3xl font-bold text-white">Inventory</h1>
         </div>
-        
-        {/* Tab Navigation */}
-        <div className="flex gap-2 mb-4">
+
+        <div className="flex gap-2 mb-3">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`flex-1 p-2 mt-2 mb-4 rounded-lg font-bold text-lg transition-colors ${
+            className={`flex-1 p-2 mt-2 rounded-lg font-bold text-lg transition-colors ${
               activeTab === 'overview'
                 ? 'bg-orange-600 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
@@ -409,20 +435,24 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           </button>
           <button
             onClick={() => setActiveTab('restock')}
-            className={`flex-1 p-2 mt-2 mb-4 rounded-lg font-bold text-lg transition-colors relative ${
+            className={`flex-1 p-2 mt-2 rounded-lg font-bold text-lg transition-colors relative ${
               activeTab === 'restock'
                 ? 'bg-orange-600 text-white'
                 : 'bg-gray-100 text-gray-600 active:bg-gray-200'
             }`}
           >
             Restock
+            {lowStockCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full min-w-[24px] h-6 px-1 flex items-center justify-center border-2 border-white">
+                {lowStockCount}
+              </span>
+            )}
           </button>
         </div>
-        
-        {/* Search Bar */}
-        <div className="relative mb-4" style={{marginBottom: "30px"}}>
-          <Search 
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
+
+        <div className="relative mb-3">
+          <Search
+            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600"
             size={24}
             strokeWidth={2.5}
           />
@@ -435,14 +465,11 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           />
         </div>
 
-        {/* Add New Button - only shown in All Stock tab */}
         {activeTab === 'overview' && (
           <button
             onClick={() => {
               setShowAddEdit(true);
-              if (onFormStateChange) {
-                onFormStateChange(true);
-              }
+              onFormStateChange?.(true);
             }}
             className="w-full bg-orange-600 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-600 transition-colors"
           >
@@ -452,34 +479,31 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
         )}
       </div>
 
-      {/* Inventory List by Category */}
       <div className="space-y-3 mb-6">
-        {configuredIngredientCategories.map(category => {
+        {visibleLowStockCategories.map((category) => {
           const categoryItems = displayGroupedItems[category] || [];
           const itemCount = categoryItems.length;
           const isCollapsed = collapsedCategories.has(category);
-          
+
           return (
             <div key={category}>
-              {/* Collapsible Category Header */}
               <button
                 onClick={() => toggleCategoryCollapse(category)}
-                className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-4 flex items-center justify-between active:bg-gray-200 transition-colors"
+                className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-4 flex items-center justify-between text-left active:bg-gray-200 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                   {isCollapsed ? (
-                    <ChevronRight size={24} className="text-gray-600" strokeWidth={2.5} />
+                    <ChevronRight size={24} className="text-gray-600 shrink-0" strokeWidth={2.5} />
                   ) : (
-                    <ChevronDown size={24} className="text-gray-600" strokeWidth={2.5} />
+                    <ChevronDown size={24} className="text-gray-600 shrink-0" strokeWidth={2.5} />
                   )}
                   <h2 className="text-lg font-bold text-gray-900 text-left">{category}</h2>
                 </div>
-                <span className="text-orange-600 font-bold text-lg">
+                <span className="text-orange-600 font-bold text-lg ml-3 shrink-0">
                   {itemCount} {itemCount === 1 ? 'ingredient' : 'ingredients'}
                 </span>
               </button>
 
-              {/* Category Items */}
               {!isCollapsed && (
                 <div className="space-y-2 mt-2">
                   {itemCount === 0 ? (
@@ -487,13 +511,11 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                       <p className="text-gray-500 font-bold">No ingredients in this category yet</p>
                     </div>
                   ) : (
-                    categoryItems.map(item => {
+                    categoryItems.map((item) => {
                       const isLow = item.quantity < item.minQuantity;
                       const hasPendingRestock = !!item.pendingRestock;
-                      
-                      // If pending restock, use yellow; otherwise use red for low or green for good
-                      const statusColor = hasPendingRestock ? 'yellow' : (isLow ? 'red' : 'green');
-                      
+                      const statusColor = hasPendingRestock ? 'yellow' : isLow ? 'red' : 'green';
+
                       return (
                         <div
                           key={item.id}
@@ -501,27 +523,16 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-3 flex-1">
-                              <div 
+                              <div
                                 className="flex-shrink-0 rounded-lg border border-gray-300 bg-gray-50 overflow-hidden flex items-center justify-center"
-                                style={{ 
-                                  width: '48px', 
-                                  height: '48px', 
-                                  minWidth: '48px', 
-                                  minHeight: '48px',
-                                  maxWidth: '48px',
-                                  maxHeight: '48px'
-                                }}
+                                style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px', maxWidth: '48px', maxHeight: '48px' }}
                               >
                                 {(item as any).image ? (
-                                  <img 
-                                    src={(item as any).image} 
-                                    alt={item.name} 
+                                  <img
+                                    src={(item as any).image}
+                                    alt={item.name}
                                     className="p-0.5"
-                                    style={{ 
-                                      width: '100%', 
-                                      height: '100%', 
-                                      objectFit: 'contain' 
-                                    }} 
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                   />
                                 ) : (
                                   <Package size={24} className="text-gray-400" />
@@ -532,7 +543,6 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                 <p className="text-gray-600 font-bold text-sm">{item.supplier}</p>
                               </div>
                             </div>
-                            {/* Edit button - only shown in All Stock tab */}
                             {activeTab === 'overview' && (
                               <button
                                 onClick={() => handleEdit(item)}
@@ -553,12 +563,11 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                             </div>
                             <div>
                               <div className={`${hasPendingRestock ? 'bg-yellow-600 text-gray-900' : `bg-${statusColor}-600 text-white`} px-4 py-2 rounded font-bold mb-1`}>
-                                {hasPendingRestock ? 'PENDING' : (isLow ? 'LOW' : 'GOOD')}
+                                {hasPendingRestock ? 'PENDING' : isLow ? 'LOW' : 'GOOD'}
                               </div>
                             </div>
                           </div>
-                          
-                          {/* Pending Restock Info */}
+
                           {hasPendingRestock && (
                             <div className="mt-3 bg-yellow-50 border-2 border-yellow-600 rounded-lg p-3">
                               <div className="flex items-center justify-between mb-1">
@@ -571,22 +580,17 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                 </p>
                               </div>
                               <div className="flex items-center justify-between text-xs">
-                                <p className="text-gray-600 font-bold">
-                                  {item.pendingRestock!.supplier}
-                                </p>
-                                <p className="text-gray-900 font-bold">
-                                  ${item.pendingRestock!.estimatedCost.toFixed(2)}
-                                </p>
+                                <p className="text-gray-600 font-bold">{item.pendingRestock!.supplier}</p>
+                                <p className="text-gray-900 font-bold">${item.pendingRestock!.estimatedCost.toFixed(2)}</p>
                               </div>
                             </div>
                           )}
-                          
-                          {/* Restock Button - shown in restock tab only for items without pending restock */}
+
                           {activeTab === 'restock' && isLow && !hasPendingRestock && (
                             <button
                               onClick={() => handleRestockClick(item)}
                               className="w-full bg-orange-600 text-white rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
-                              style={{marginTop: "25px"}}
+                              style={{ marginTop: '25px' }}
                             >
                               <Package size={20} strokeWidth={2.5} />
                               Restock Now
@@ -602,52 +606,46 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           );
         })}
       </div>
-      
-      {/* Optional Restock Section - only shown in Restock tab */}
-      {activeTab === 'restock' && Object.keys(optionalGroupedItems).length > 0 && (
+
+      {activeTab === 'restock' && visibleOptionalCategories.length > 0 && (
         <>
           <div className="bg-blue-50 border-2 border-blue-600 rounded-lg p-4 mb-3">
             <p className="text-blue-900 font-bold text-sm text-center">
               ℹ️ Optional Restock - These ingredients don't need immediate restocking
             </p>
           </div>
-          
+
           <div className="space-y-3 mb-6">
-            {configuredIngredientCategories.map(category => {
+            {visibleOptionalCategories.map((category) => {
               const categoryItems = optionalGroupedItems[category] || [];
               const itemCount = categoryItems.length;
               const isCollapsed = collapsedCategories.has(category);
-              
-              // Skip categories with no items in optional section
-              if (itemCount === 0) return null;
-              
+
               return (
                 <div key={`optional-${category}`}>
-                  {/* Collapsible Category Header */}
                   <button
                     onClick={() => toggleCategoryCollapse(category)}
-                    className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-4 flex items-center justify-between active:bg-gray-200 transition-colors"
+                    className="w-full bg-gray-100 border-2 border-gray-300 rounded-lg p-4 flex items-center justify-between text-left active:bg-gray-200 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
                       {isCollapsed ? (
-                        <ChevronRight size={24} className="text-gray-600" strokeWidth={2.5} />
+                        <ChevronRight size={24} className="text-gray-600 shrink-0" strokeWidth={2.5} />
                       ) : (
-                        <ChevronDown size={24} className="text-gray-600" strokeWidth={2.5} />
+                        <ChevronDown size={24} className="text-gray-600 shrink-0" strokeWidth={2.5} />
                       )}
-                      <h2 className="text-xl font-bold text-gray-900">{category}</h2>
+                      <h2 className="text-lg font-bold text-gray-900 text-left">{category}</h2>
                     </div>
-                    <span className="text-orange-600 font-bold text-lg">
+                    <span className="text-orange-600 font-bold text-lg ml-3 shrink-0">
                       {itemCount} {itemCount === 1 ? 'ingredient' : 'ingredients'}
                     </span>
                   </button>
 
-                  {/* Category Items */}
                   {!isCollapsed && (
                     <div className="space-y-2 mt-2">
-                      {categoryItems.map(item => {
+                      {categoryItems.map((item) => {
                         const hasPendingRestock = !!item.pendingRestock;
                         const statusColor = hasPendingRestock ? 'yellow' : 'green';
-                        
+
                         return (
                           <div
                             key={item.id}
@@ -655,27 +653,16 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                           >
                             <div className="flex items-start justify-between mb-2">
                               <div className="flex items-center gap-3 flex-1">
-                                <div 
+                                <div
                                   className="flex-shrink-0 rounded-lg border border-gray-300 bg-gray-50 overflow-hidden flex items-center justify-center"
-                                  style={{ 
-                                    width: '48px', 
-                                    height: '48px', 
-                                    minWidth: '48px', 
-                                    minHeight: '48px',
-                                    maxWidth: '48px',
-                                    maxHeight: '48px'
-                                  }}
+                                  style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px', maxWidth: '48px', maxHeight: '48px' }}
                                 >
                                   {(item as any).image ? (
-                                    <img 
-                                      src={(item as any).image} 
-                                      alt={item.name} 
+                                    <img
+                                      src={(item as any).image}
+                                      alt={item.name}
                                       className="p-0.5"
-                                      style={{ 
-                                        width: '100%', 
-                                        height: '100%', 
-                                        objectFit: 'contain' 
-                                      }} 
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                     />
                                   ) : (
                                     <Package size={24} className="text-gray-400" />
@@ -702,8 +689,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                 </div>
                               </div>
                             </div>
-                            
-                            {/* Pending Restock Info */}
+
                             {hasPendingRestock && (
                               <div className="mt-3 bg-yellow-50 border-2 border-yellow-600 rounded-lg p-3">
                                 <div className="flex items-center justify-between mb-1">
@@ -716,22 +702,17 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                   </p>
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
-                                  <p className="text-gray-600 font-bold">
-                                    {item.pendingRestock!.supplier}
-                                  </p>
-                                  <p className="text-gray-900 font-bold">
-                                    ${item.pendingRestock!.estimatedCost.toFixed(2)}
-                                  </p>
+                                  <p className="text-gray-600 font-bold">{item.pendingRestock!.supplier}</p>
+                                  <p className="text-gray-900 font-bold">${item.pendingRestock!.estimatedCost.toFixed(2)}</p>
                                 </div>
                               </div>
                             )}
-                            
-                            {/* Restock Button for optional items */}
+
                             {!hasPendingRestock && (
                               <button
                                 onClick={() => handleRestockClick(item)}
                                 className="w-full bg-orange-600 text-white rounded-lg p-2 font-bold text-base flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-3"
-                                style={{marginTop: "25px"}}
+                                style={{ marginTop: '25px' }}
                               >
                                 <Package size={20} strokeWidth={2.5} />
                                 Restock (Optional)

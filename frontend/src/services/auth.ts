@@ -2,6 +2,8 @@ import { apiRequest } from './api';
 
 const AUTH_STORAGE_KEY = 'managemee-auth';
 
+type StallCategoryField = 'stallCategories' | 'ingredientCategories';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -43,6 +45,14 @@ export interface LoginPayload {
   password: string;
 }
 
+function normalizeCategoryList(categories: string[], fallback: string[]): string[] {
+  const normalized = categories
+    .map((category) => category.trim())
+    .filter((category) => category.length > 0);
+
+  return normalized.length > 0 ? [...new Set(normalized)] : fallback;
+}
+
 export function saveAuthSession(session: AuthSession) {
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
 }
@@ -68,23 +78,33 @@ export function getStoredStallId(): string | null {
 }
 
 export function getStoredStallCategories(): string[] {
-  const categories = getStoredAuthSession()?.stall?.stallCategories ?? [];
-
-  const normalized = categories
-    .map((category) => category.trim())
-    .filter((category) => category.length > 0);
-
-  return normalized.length > 0 ? [...new Set(normalized)] : ['Other'];
+  return normalizeCategoryList(getStoredAuthSession()?.stall?.stallCategories ?? [], ['Other']);
 }
 
 export function getStoredIngredientCategories(): string[] {
-  const categories = getStoredAuthSession()?.stall?.ingredientCategories ?? [];
+  return normalizeCategoryList(getStoredAuthSession()?.stall?.ingredientCategories ?? [], ['Other']);
+}
 
-  const normalized = categories
-    .map((category) => category.trim())
-    .filter((category) => category.length > 0);
+export function setStoredStallCategoryList(
+  field: StallCategoryField,
+  categories: string[],
+): string[] {
+  const normalized = normalizeCategoryList(categories, ['Other']);
+  const session = getStoredAuthSession();
 
-  return normalized.length > 0 ? [...new Set(normalized)] : ['Other'];
+  if (!session?.stall) {
+    return normalized;
+  }
+
+  saveAuthSession({
+    ...session,
+    stall: {
+      ...session.stall,
+      [field]: normalized,
+    },
+  });
+
+  return normalized;
 }
 
 export async function registerUser(payload: SignupPayload) {

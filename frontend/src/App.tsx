@@ -42,55 +42,52 @@ export default function App() {
     setInventorySubTab('restock');
   };
 
-  // Show login screen if not authenticated
   if (!isAuthenticated) {
-    return (
-      // <IPhoneFrame>
-      <Landing onLogin={handleLogin} />
-      // </IPhoneFrame>
-    );
+    return <Landing onLogin={handleLogin} />;
   }
 
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
-        return <Dashboard
-                 onNavigateToWorkMode={navigateToWorkMode}
-                 onNavigateToRestock={navigateToRestock}
-                 salesRefreshKey={salesRefreshKey}
-               />;
+        return (
+          <Dashboard
+            onNavigateToWorkMode={navigateToWorkMode}
+            onNavigateToRestock={navigateToRestock}
+            salesRefreshKey={salesRefreshKey}
+          />
+        );
       case 'inventory':
         return <InventoryList initialSubTab={inventorySubTab} onFormStateChange={setIsFormOpen} />;
       case 'menu':
-        return <MenuManager
-                 initialSubTab={menuSubTab}
-                 onFormStateChange={setIsFormOpen}
-                 onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)}
-                 onExitToHome={() => {
-                   setActiveTab('home');
-                   setMenuSubTab('all');
-                   setIsFormOpen(false);
-                 }}
-               />;
+        return (
+          <MenuManager
+            initialSubTab={menuSubTab}
+            onFormStateChange={setIsFormOpen}
+            onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)}
+            onExitToHome={() => {
+              setActiveTab('home');
+              setMenuSubTab('all');
+              setIsFormOpen(false);
+            }}
+          />
+        );
       case 'settings':
-        return <Settings onLogout={handleLogout}/>;
+        return <Settings onLogout={handleLogout} onFormStateChange={setIsFormOpen} />;
       default:
-        return <Dashboard 
-                 onNavigateToWorkMode={navigateToWorkMode} 
-                 onNavigateToRestock={navigateToRestock} 
-               />;
+        return (
+          <Dashboard
+            onNavigateToWorkMode={navigateToWorkMode}
+            onNavigateToRestock={navigateToRestock}
+          />
+        );
     }
   };
 
   return (
     <IPhoneFrame>
       <div className="h-full bg-white flex flex-col">
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto min-h-0">
-          {renderContent()}
-        </main>
+        <main className="flex-1 overflow-y-auto min-h-0">{renderContent()}</main>
 
-        {/* Bottom Navigation - Hidden when form is open */}
         {!isFormOpen && (
           <nav className="bg-white border-t-2 border-gray-200 flex-shrink-0">
             <div className="grid grid-cols-4 h-20">

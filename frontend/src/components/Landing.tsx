@@ -198,14 +198,11 @@ line-height:1.5
 }
 
 .actions{
-display:flex;
-gap:12px;
-margin-top:auto;
-padding-top:24px;
-padding-bottom:6px;
-position:sticky;
-bottom:0;
-background:linear-gradient(180deg,rgba(255,255,255,0) 0%, #ffffff 22%, #ffffff 100%)
+  display:flex;
+  gap:12px;
+  margin-top:24px;
+  padding-top:0;
+  padding-bottom:6px;
 }
 
 .btn{
@@ -608,7 +605,7 @@ const [email, setEmail] = useState('');
 const [password, setPassword] = useState('');
 const [name, setName] = useState('');
 const [stallName, setStallName] = useState('');
-const [locationMode, setLocationMode] = useState<'map'|'manual'>('map');
+const [locationMode, setLocationMode] = useState<'map'|'manual'>('manual');
 const [selectedMapLocation, setSelectedMapLocation] = useState('');
 const [manualAddress, setManualAddress] = useState('');
 const [menuSelected, setMenuSelected] = useState<string[]>([]);
@@ -830,16 +827,18 @@ return (
                 {/* <p className="subtext">Add your stall name and choose a location either from the map or by entering the address manually.</p> */}
 
                 <div className="field">
-                    <label htmlFor="stallName">Stall name</label>
+                    <label htmlFor="stallName">Stall Name</label>
                     <input id="stallName" name="stallName" type="text" placeholder="Example: Ah Meng Chicken Rice" value={stallName} onChange={e=>setStallName(e.target.value)} required />
                 </div>
-
-                <div className="toggle-row" role="tablist" aria-label="Location entry method">
+                
+                {/* <div className="toggle-row" role="tablist" aria-label="Location entry method">
+                    <label htmlFor="stallName">Stall Location</label>
                     <button type="button" className={`toggle-btn ${locationMode==='map'?'active':''}`} onClick={()=>setLocationMode('map')}>Pick from map</button>
                     <button type="button" className={`toggle-btn ${locationMode==='manual'?'active':''}`} onClick={()=>setLocationMode('manual')}>Enter address manually</button>
-                </div>
+                </div> */}
 
-                <div className={`location-panel ${locationMode==='map'?'active':''}`}>
+                {/* FUTURE: Use map to pick location */}
+                {/* <div className={`location-panel ${locationMode==='map'?'active':''}`}>
                     <div className="map-card">
                     <div className="map-visual" aria-label="Map location picker">
                         <div className="map-road road-1" style={{top:26,left:-18,width:210,height:18,transform:'rotate(18deg)'}} />
@@ -853,13 +852,13 @@ return (
                     <div className="map-selected">{selectedMapLocation ? `Selected location: ${selectedMapLocation}` : 'No map location selected yet.'}</div>
                     <span className="hint">This is a frontend prototype map picker. You can later swap it with a real map integration.</span>
                     </div>
-                </div>
+                </div> */}
 
-                <div className={`location-panel ${locationMode==='manual'?'active':''}`}>
+                <div className={`location-panel ${locationMode === 'manual' ? 'active' : ''}`}>
                     <div className="field">
-                    <label htmlFor="manualAddress">Stall address</label>
-                    <textarea id="manualAddress" name="manualAddress" placeholder="Enter your stall address" value={manualAddress} onChange={e=>setManualAddress(e.target.value)} />
-                    <span className="hint">Example: 18 Raffles Quay, #B1-12, Singapore 048582</span>
+                    <label htmlFor="manualAddress">Stall Location</label>
+                    <textarea id="manualAddress" name="manualAddress" placeholder="Example: Maxwell Food Centre or ABC Coffee Shop" value={manualAddress} onChange={e=>setManualAddress(e.target.value)} />
+                    <span className="hint">Enter the hawker centre or coffee shop where your stall is located</span>
                     </div>
                 </div>
 

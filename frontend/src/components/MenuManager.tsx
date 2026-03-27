@@ -439,7 +439,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
                   ) : (
                     <ChevronDown size={20} className="text-gray-600" strokeWidth={2.5} />
                   )}
-                  <h2 className="text-lg font-bold text-gray-900">{category}</h2>
+                  <h2 className="text-lg font-bold text-gray-900 text-left">{category}</h2>
                 </div>
                 <span className="text-orange-600 font-bold text-lg">
                   {itemCount} {itemCount === 1 ? 'dish' : 'dishes'}
