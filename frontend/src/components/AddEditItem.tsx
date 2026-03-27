@@ -609,7 +609,7 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
               ))}
             </select>
           </div>
-        </div>
+        )}
 
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
