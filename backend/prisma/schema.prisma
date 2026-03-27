@@ -73,11 +73,12 @@ model RecipeIngredient {
 }
 
 model SaleRecord {
-  id           String   @id @default(uuid())
-  menuItemId   String?
-  menuItemName String
-  quantity     Int
-  timestamp    DateTime @default(now())
+  id             String   @id @default(uuid())
+  menuItemId     String?
+  menuItemName   String
+  menuItemPrice  Float    @default(0)
+  quantity       Int
+  timestamp      DateTime @default(now())
 
   menuItem     MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 

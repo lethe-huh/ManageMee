@@ -244,6 +244,38 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     }
   };
 
+  const handleMarkReceived = async (item: InventoryItem) => {
+    if (!item.pendingRestock) return;
+
+    const newQuantity = Number(
+      (item.quantity + item.pendingRestock.quantity).toFixed(3)
+    );
+
+    try {
+      const updatedItem = await updateInventoryItem(item.id, {
+        name: item.name,
+        category: item.category,
+        quantity: newQuantity,
+        unit: item.unit,
+        minQuantity: item.minQuantity,
+        supplier: item.supplier,
+        targetPrice: item.targetPrice,
+        pendingRestock: null,
+      });
+
+      setItems((prev) =>
+        sortInventoryItems(
+          prev.map((inventoryItem) =>
+            inventoryItem.id === updatedItem.id ? updatedItem : inventoryItem
+          )
+        )
+      );
+    } catch (error) {
+      console.error('Failed to mark restock as received:', error);
+      alert(error instanceof Error ? error.message : 'Failed to mark restock as received.');
+    }
+  };
+
   const handleDeleteItem = async (id: string) => {
     try {
       await deleteInventoryItem(id);
@@ -553,7 +585,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                   +{item.pendingRestock!.quantity.toFixed(1)} {item.unit}
                                 </p>
                               </div>
-                              <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center justify-between text-xs mb-3">
                                 <p className="text-gray-600 font-bold">
                                   {item.pendingRestock!.supplier}
                                 </p>
@@ -561,6 +593,12 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                   ${item.pendingRestock!.estimatedCost.toFixed(2)}
                                 </p>
                               </div>
+                              <button
+                                onClick={() => handleMarkReceived(item)}
+                                className="w-full bg-yellow-600 text-white rounded-lg p-2 font-bold text-sm active:bg-yellow-700 transition-colors"
+                              >
+                                Mark as Received
+                              </button>
                             </div>
                           )}
                           
