@@ -353,39 +353,41 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
           </select>
         </div>
 
-        {/* Quantity and Unit */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-gray-900 font-bold mb-1 text-base">
-              Quantity *
-            </label>
-            <input
-              type="number"
-              required
-              step="0.1"
-              min="0"
-              value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-              placeholder="0.0"
-              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-            />
+        {/* Quantity and Unit — only shown when creating a new ingredient */}
+        {!item && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-gray-900 font-bold mb-1 text-base">
+                Quantity *
+              </label>
+              <input
+                type="number"
+                required
+                step="0.1"
+                min="0"
+                value={formData.quantity}
+                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                placeholder="0.0"
+                className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-900 font-bold mb-1 text-base">
+                Unit *
+              </label>
+              <select
+                required
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+              >
+                {availableUnits.map(unit => (
+                  <option key={unit} value={unit}>{unit}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-gray-900 font-bold mb-1 text-base">
-              Unit *
-            </label>
-            <select
-              required
-              value={formData.unit}
-              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-            >
-              {availableUnits.map(unit => (
-                <option key={unit} value={unit}>{unit}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        )}
 
         {/* Minimum Quantity */}
         <div>

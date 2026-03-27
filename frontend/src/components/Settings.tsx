@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Globe, DollarSign, User, HelpCircle, LogOut, X, Save } from 'lucide-react';
-
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3001';
+import { API_BASE } from '../utils/apiBase';
 
 interface SettingsData {
   stallName: string;
