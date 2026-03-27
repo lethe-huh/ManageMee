@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { X, Save, Trash2, Plus, Edit2 } from 'lucide-react';
 import { InventoryItem, Supplier } from '../types/inventory';
 import { createSupplier, getSuppliers } from '../services/suppliers';
-import { categories, getUnitsForCategory } from '../data/constants';
+import { getStoredIngredientCategories } from '../services/auth';
+import { getUnitsForCategory } from '../data/constants';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseIngredientTranscript } from '../utils/voiceParsers';
 import microphoneImg from '../assets/microphone.png';
@@ -16,9 +17,11 @@ interface AddEditItemProps {
 }
 
 export default function AddEditItem({ item, onSave, onCancel, onDelete, isDeleteDisabled = false }: AddEditItemProps) {
+  const configuredIngredientCategories = getStoredIngredientCategories();
+
   const [formData, setFormData] = useState({
     name: item?.name || '',
-    category: item?.category || '',
+    category: item?.category || configuredIngredientCategories[0] || '',
     quantity: item?.quantity?.toString() || '',
     unit: item?.unit || 'kg',
     minQuantity: item?.minQuantity?.toString() || '',
@@ -32,6 +35,13 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
   const [supplierOptions, setSupplierOptions] = useState<Supplier[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { voiceState, transcript, voiceError, toggle, resultCount } = useVoiceInput();
+  const ingredientCategoryOptions = Array.from(
+    new Set([
+      ...configuredIngredientCategories,
+      ...(item?.category ? [item.category] : []),
+      ...(formData.category ? [formData.category] : []),
+    ]),
+  );
 
   // Populate form fields when voice transcript is ready.
   useEffect(() => {
@@ -39,7 +49,7 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
       const parsed = parseIngredientTranscript(
         transcript,
         supplierOptions.map((s) => s.name),
-        categories
+        ingredientCategoryOptions
       );
       setFormData((prev) => ({
         ...prev,
@@ -214,8 +224,46 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
 
   const displayedImage = itemImagePreview || itemImage;
 
+  if (item && onDelete && !isDeleteDisabled && showDeleteConfirm) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-6 text-base text-gray-700">
+            Are you sure you want to delete this ingredient?
+          </p>
+
+          <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await onDelete(item.id);
+                      setShowDeleteConfirm(false);
+                    } catch (error) {
+                      console.error('Failed to delete ingredient:', error);
+                    }
+                  }}
+                  className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
+                >
+                  Delete
+                </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-3">
+    <div className="relative h-full p-3">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">
@@ -347,7 +395,7 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
             className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           >
             <option value="">Select category</option>
-            {categories.map(cat => (
+            {ingredientCategoryOptions.map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
@@ -468,28 +516,6 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
         </div>
 
         {/* Delete Button */}
-        {item && onDelete && (
-          <button
-            type="button"
-            disabled={isDeleteDisabled}
-            onClick={() => {
-              if (!isDeleteDisabled) {
-                setShowDeleteConfirm(true);
-              }
-            }}
-            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mt-6 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            <Trash2 size={28} strokeWidth={2.5} />
-            Delete Ingredient
-          </button>
-        )}
-
-        {item && isDeleteDisabled && (
-          <p className="text-sm text-gray-600 mt-2">
-            This ingredient cannot be deleted because it is used in a dish.
-          </p>
-        )}
-
         {/* Save Button */}
         <button
           type="submit"
@@ -501,74 +527,31 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
 
         {/* Delete Button (edit mode only) */}
         {item && onDelete && (
-          <>
-            {!showDeleteConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="w-full bg-white border-2 border-red-600 text-red-600 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-red-50 transition-colors mb-4"
-              >
-                <Trash2 size={22} strokeWidth={2.5} />
-                Delete Ingredient
-              </button>
-            ) : (
-              <div className="border-2 border-red-600 rounded-lg p-3 mb-4">
-                <p className="text-red-700 font-bold text-center mb-3">Delete this ingredient?</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onDelete(item.id)}
-                    className="flex-1 bg-red-600 text-white rounded-lg p-2 font-bold active:bg-red-700"
-                  >
-                    Yes, Delete
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 rounded-lg p-2 font-bold active:bg-gray-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+          <button
+            type="button"
+            disabled={isDeleteDisabled}
+            onClick={() => {
+              if (!isDeleteDisabled) {
+                setShowDeleteConfirm(true);
+              }
+            }}
+            className={`w-full border-2 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 transition-colors mb-4 ${
+              isDeleteDisabled
+                ? 'bg-gray-400 border-gray-400 text-white cursor-not-allowed'
+                : 'bg-white border-red-600 text-red-600 active:bg-red-50'
+            }`}
+          >
+            <Trash2 size={28} strokeWidth={2.5} />
+            Delete Ingredient
+          </button>
+        )}
+
+        {item && isDeleteDisabled && (
+          <p className="text-sm text-gray-600 mt-2">
+            This ingredient cannot be deleted because it is used in a dish.
+          </p>
         )}
       </form>
-
-      {item && onDelete && !isDeleteDisabled && showDeleteConfirm && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete this ingredient?
-            </p>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await onDelete(item.id);
-                    setShowDeleteConfirm(false);
-                  } catch (error) {
-                    console.error('Failed to delete ingredient:', error);
-                  }
-                }}
-                className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { InventoryItem } from '../types/inventory';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseDishTranscript } from '../utils/voiceParsers';
 import microphoneImg from '../assets/microphone.png';
+import { getStoredStallCategories } from '../services/auth';
 
 interface EditMenuItemProps {
   item?: MenuItem | null;
@@ -21,8 +22,11 @@ const normalizeToSmallestUnit = (quantity: number, unit: string) => {
 }
 
 export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, onDelete }: EditMenuItemProps) {
+  const configuredDishCategories = getStoredStallCategories();
+  const initialDishType = item?.category || configuredDishCategories[0] || 'Other';
+
   const [dishName, setDishName] = useState(item?.name || '');
-  const [dishType, setDishType] = useState(item?.category || 'Rice Dishes');
+  const [dishType, setDishType] = useState(initialDishType);
   const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
   const [dishImage, setDishImage] = useState<string | undefined>(item?.image);
   const [dishImagePreview, setDishImagePreview] = useState<string | undefined>(item?.image);
@@ -53,6 +57,13 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultCount]);
   const [ingredientToDelete, setIngredientToDelete] = useState<number | null>(null);
+  const dishCategoryOptions = Array.from(
+    new Set([
+      ...configuredDishCategories,
+      ...(item?.category ? [item.category] : []),
+      ...(dishType ? [dishType] : []),
+    ]),
+  );
 
   useEffect(() => {
   return () => {
@@ -225,8 +236,95 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   const displayedImage = dishImagePreview || dishImage;
   const allIngredientsZero = ingredients.length > 0 && ingredients.every(ing => ing.quantity === 0);
   
+  {/* Delete Confirmation */}
+  if (item && ingredientToDelete !== null) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-6 text-base text-gray-700">
+            Are you sure you want to remove{' '}
+            <span className="font-bold text-gray-900">
+              {ingredients[ingredientToDelete]?.inventoryItemName}
+            </span>{' '}
+            from this dish?
+          </p>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setIngredientToDelete(null)}
+              className="rounded-lg bg-gray-600 px-5 py-3 font-bold text-white transition-colors active:bg-gray-700"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={() => {
+                if (ingredientToDelete !== null) {
+                  removeIngredient(ingredientToDelete);
+                }
+                setIngredientToDelete(null);
+              }}
+              className="rounded-lg bg-red-600 px-5 py-3 font-bold text-white transition-colors active:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item && onDelete && showDeleteConfirm) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-3 text-base text-gray-700">
+            Are you sure you want to delete this dish from your menu?
+          </p>
+
+          <p className="mb-6 text-base text-gray-700">
+            If this dish has sales history, do you want to keep those sales records or delete them too?
+          </p>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={async () => {
+                await onDelete(item.id, 'keep');
+                setShowDeleteConfirm(false);
+              }}
+              className="w-full rounded-lg bg-orange-600 px-5 py-3 font-bold text-white transition-colors active:bg-orange-700"
+            >
+              Delete Dish, Keep Sales History
+            </button>
+
+            <button
+              onClick={async () => {
+                await onDelete(item.id, 'delete');
+                setShowDeleteConfirm(false);
+              }}
+              className="w-full rounded-lg bg-red-600 px-5 py-3 font-bold text-white transition-colors active:bg-red-700"
+            >
+              Delete Dish and Sales History
+            </button>
+
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="w-full rounded-lg bg-gray-600 px-5 py-3 font-bold text-white transition-colors active:bg-gray-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className=" bg-white">
+    <div className="h-full bg-white">
       {/* Header */}
       <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10">
         <h1 className="text-2xl font-bold text-gray-900">
@@ -360,13 +458,11 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
               onChange={(e) => setDishType(e.target.value)}
               className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
             >
-              <option value="Rice Dishes">Rice Dish</option>
-              <option value="Noodle Dishes">Noodle Dish</option>
-              {/*<option value="Appetizer">Appetizer</option>*/}
-              {/*<option value="Main Course">Main Course</option>*/}
-              {/*<option value="Dessert">Dessert</option>*/}
-              {/*<option value="Beverage">Beverage</option>*/}
-              <option value="Other">Other</option>
+              {dishCategoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -489,17 +585,6 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           </div>
         </div>
 
-        {/* Delete Button - Above Save Button */}
-        {item && onDelete && (
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mb-3"
-          >
-            <Trash2 size={28} strokeWidth={2.5} />
-            Delete Dish
-          </button>
-        )}
-
         {/* Save Button */}
         <button
           onClick={handleSave}
@@ -544,52 +629,17 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           </div>
         )}
 
-        {/* Delete Confirmation */}
-        {showDeleteConfirm && (
-          <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full mx-4">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
-              <p className="text-gray-600 mb-3">
-                Are you sure you want to delete this dish from your menu.
-              </p>
-              <p className="text-gray-600 mb-6">
-                If this dish has sales history, do you want to keep those sales records or delete them too?
-              </p>
-
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={async () => {
-                    if (item && onDelete) {
-                      await onDelete(item.id, 'keep');
-                    }
-                    setShowDeleteConfirm(false);
-                  }}
-                  className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold active:bg-orange-700 transition-colors"
-                >
-                  Delete Dish, Keep Sales History
-                </button>
-
-                <button
-                  onClick={async () => {
-                    if (item && onDelete) {
-                      await onDelete(item.id, 'delete');
-                    }
-                    setShowDeleteConfirm(false);
-                  }}
-                  className="w-full bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
-                >
-                  Delete Dish and Sales History
-                </button>
-
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="w-full bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Delete Button */}
+        {item && onDelete && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className={`w-full border-2 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 transition-colors mb-4 ${
+                'bg-white border-red-600 text-red-600 active:bg-red-50'
+            }`}
+          >
+            <Trash2 size={28} strokeWidth={2.5} />
+            Delete Dish
+          </button>
         )}
       </div>
     </div>

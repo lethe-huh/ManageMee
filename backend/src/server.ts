@@ -1123,6 +1123,35 @@ app.delete("/api/menu/:id", async (req, res) => {
   }
 });
 
+app.get("/api/menu/:id/delete-info", async (req, res) => {
+  const stallId = getRequiredStallId(req);
+  if (!stallId) {
+    return res.status(400).json({ error: "Missing x-stall-id header." });
+  }
+
+  try {
+    const existingMenuItem = await prisma.menuItem.findFirst({
+      where: { id: req.params.id, stallId },
+      select: { id: true },
+    });
+
+    if (!existingMenuItem) {
+      return res.status(404).json({ error: "Menu item not found." });
+    }
+
+    const salesCount = await prisma.saleRecord.count({
+      where: { stallId, menuItemId: req.params.id },
+    });
+
+    return res.json({
+      hasSales: salesCount > 0,
+      salesCount,
+    });
+  } catch (error) {
+    return sendInternalError(res, "Failed to fetch menu item delete info.", error);
+  }
+});
+
 app.get("/api/suppliers", async (req, res) => {
   const stallId = getRequiredStallId(req);
   if (!stallId) {

@@ -67,6 +67,26 @@ export function getStoredStallId(): string | null {
   return getStoredAuthSession()?.stall?.id ?? null;
 }
 
+export function getStoredStallCategories(): string[] {
+  const categories = getStoredAuthSession()?.stall?.stallCategories ?? [];
+
+  const normalized = categories
+    .map((category) => category.trim())
+    .filter((category) => category.length > 0);
+
+  return normalized.length > 0 ? [...new Set(normalized)] : ['Other'];
+}
+
+export function getStoredIngredientCategories(): string[] {
+  const categories = getStoredAuthSession()?.stall?.ingredientCategories ?? [];
+
+  const normalized = categories
+    .map((category) => category.trim())
+    .filter((category) => category.length > 0);
+
+  return normalized.length > 0 ? [...new Set(normalized)] : ['Other'];
+}
+
 export async function registerUser(payload: SignupPayload) {
   const session = await apiRequest<AuthSession>('/api/auth/signup', {
     method: 'POST',

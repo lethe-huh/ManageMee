@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search, Mic, X } from 'lucide-react';
-import { dishCategories } from '../data/constants';
+import { getStoredStallCategories } from '../services/auth';
 import wontonmeeImg from '../assets/wontonmee.png';
 import roastedcrImg from '../assets/roastedcr.png';
 import currylaksaImg from '../assets/currylaksa.png';
@@ -119,24 +119,42 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
+  const configuredDishCategories = useMemo(() => {
+    const baseCategories = getStoredStallCategories();
+
+    const extraCategories = Array.from(
+      new Set(
+        menuItems
+          .map((item) => item.category)
+          .filter((category) => !baseCategories.includes(category)),
+      ),
+    );
+
+    return [...baseCategories, ...extraCategories];
+  }, [menuItems]);
+
   const loadMenuAndInventory = useCallback(async () => {
     try {
       const [menu, inventory] = await Promise.all([getMenuItems(), getInventory()]);
       setMenuItems(menu);
       setInventoryItems(inventory);
-
-      const collapsed = new Set<string>();
-      dishCategories.forEach((category) => {
-        const hasItems = menu.some((menuItem) => menuItem.category === category);
-        if (!hasItems) {
-          collapsed.add(category);
-        }
-      });
-      setCollapsedCategories(collapsed);
     } catch (error) {
       console.error('Failed to load menu/inventory:', error);
     }
   }, []);
+
+  useEffect(() => {
+    const collapsed = new Set<string>();
+
+    configuredDishCategories.forEach((category) => {
+      const hasItems = menuItems.some((menuItem) => menuItem.category === category);
+      if (!hasItems) {
+        collapsed.add(category);
+      }
+    });
+
+    setCollapsedCategories(collapsed);
+  }, [menuItems, configuredDishCategories]);
 
   useEffect(() => {
     return () => {
@@ -403,7 +421,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
       </div>
 
       {/* Menu Items by Category */}
-      <div className="space-y-2 mb-3">{dishCategories.map(category => {
+      <div className="space-y-2 mb-3">{configuredDishCategories.map(category => {
           const items = groupedItems[category] || [];
           const itemCount = items.length;
           const isCollapsed = collapsedCategories.has(category);

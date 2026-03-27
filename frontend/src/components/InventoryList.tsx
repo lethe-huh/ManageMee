@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Edit2, Package, ChevronDown, ChevronRight } from 'lucide-react';
-import { categories } from '../data/constants';
+import { getStoredIngredientCategories } from '../services/auth';
 import AddEditItem from './AddEditItem';
 import LowStockAlert from './LowStockAlert';
 import RestockModal from './RestockModal';
@@ -54,6 +54,20 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
   const [activeTab, setActiveTab] = useState<'overview' | 'restock'>(initialSubTab === 'restock' ? 'restock' : 'overview');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
+  const configuredIngredientCategories = useMemo(() => {
+    const baseCategories = getStoredIngredientCategories();
+
+    const extraCategories = Array.from(
+      new Set(
+        items
+          .map((item) => item.category)
+          .filter((category) => !baseCategories.includes(category)),
+      ),
+    );
+
+    return [...baseCategories, ...extraCategories];
+  }, [items]);
+
   useEffect(() => {
     setActiveTab(initialSubTab === 'restock' ? 'restock' : 'overview');
   }, [initialSubTab]);
@@ -92,15 +106,6 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
 
       const sorted = sortInventoryItems(syncedInventory);
       setItems(sorted);
-
-      const collapsed = new Set<string>();
-      categories.forEach((category) => {
-        const hasItems = sorted.some((item) => item.category === category);
-        if (!hasItems) {
-          collapsed.add(category);
-        }
-      });
-      setCollapsedCategories(collapsed);
     } catch (error) {
       console.error('Failed to load inventory:', error);
     }
@@ -119,6 +124,19 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
     void loadInventory();
     void loadMenuItems();
   }, [loadInventory, loadMenuItems]);
+
+  useEffect(() => {
+    const collapsed = new Set<string>();
+
+    configuredIngredientCategories.forEach((category) => {
+      const hasItems = items.some((item) => item.category === category);
+      if (!hasItems) {
+        collapsed.add(category);
+      }
+    });
+
+    setCollapsedCategories(collapsed);
+  }, [items, configuredIngredientCategories]);
 
 
 
@@ -323,7 +341,6 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
         onSave={editingItem ? handleEditItem : handleAddItem}
         onDelete={editingItem ? handleDeleteItem : undefined}
         onCancel={handleClose}
-        onDelete={handleDeleteItem}
         isDeleteDisabled={isEditingItemUsedInDish}
       />
     );
@@ -437,7 +454,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
 
       {/* Inventory List by Category */}
       <div className="space-y-3 mb-6">
-        {categories.map(category => {
+        {configuredIngredientCategories.map(category => {
           const categoryItems = displayGroupedItems[category] || [];
           const itemCount = categoryItems.length;
           const isCollapsed = collapsedCategories.has(category);
@@ -455,7 +472,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                   ) : (
                     <ChevronDown size={24} className="text-gray-600" strokeWidth={2.5} />
                   )}
-                  <h2 className="text-xl font-bold text-gray-900">{category}</h2>
+                  <h2 className="text-lg font-bold text-gray-900 text-left">{category}</h2>
                 </div>
                 <span className="text-orange-600 font-bold text-lg">
                   {itemCount} {itemCount === 1 ? 'ingredient' : 'ingredients'}
@@ -596,7 +613,7 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
           </div>
           
           <div className="space-y-3 mb-6">
-            {categories.map(category => {
+            {configuredIngredientCategories.map(category => {
               const categoryItems = optionalGroupedItems[category] || [];
               const itemCount = categoryItems.length;
               const isCollapsed = collapsedCategories.has(category);
