@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { X, Save, Plus, Trash2, Edit2 } from 'lucide-react';
 import { MenuItem, MenuItemPayload, RecipeIngredient } from '../types/menu';
 import { InventoryItem } from '../types/inventory';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import { parseDishTranscript } from '../utils/voiceParsers';
+import microphoneImg from '../assets/microphone.png';
+import { getStoredStallCategories, setStoredStallCategoryList } from '../services/auth';
+import { apiRequest } from '../services/api';
 
 interface EditMenuItemProps {
   item?: MenuItem | null;
@@ -18,8 +23,21 @@ const normalizeToSmallestUnit = (quantity: number, unit: string) => {
 }
 
 export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, onDelete }: EditMenuItemProps) {
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(() =>
+    Array.from(
+      new Set([
+        ...getStoredStallCategories(),
+        ...(item?.category ? [item.category] : []),
+      ]),
+    ),
+  );
+
+  const initialDishType = item?.category || categoryOptions[0] || 'Other';
+
   const [dishName, setDishName] = useState(item?.name || '');
-  const [dishType, setDishType] = useState(item?.category || 'Rice Dishes');
+  const [dishType, setDishType] = useState(initialDishType);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [price, setPrice] = useState(item?.price ? item.price.toFixed(2) : '');
   const [dishImage, setDishImage] = useState<string | undefined>(item?.image);
   const [dishImagePreview, setDishImagePreview] = useState<string | undefined>(item?.image);
@@ -37,7 +55,24 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   );
   const [showAddIngredient, setShowAddIngredient] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { voiceState, transcript, voiceError, toggle, resultCount } = useVoiceInput();
+
+  // Populate form fields when voice transcript is ready.
+  useEffect(() => {
+    if (voiceState === 'done' && transcript) {
+      const parsed = parseDishTranscript(transcript);
+      if (parsed.dishName) setDishName(parsed.dishName);
+      if (parsed.dishType) setDishType(parsed.dishType);
+      if (parsed.price) setPrice(parsed.price);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultCount]);
   const [ingredientToDelete, setIngredientToDelete] = useState<number | null>(null);
+  useEffect(() => {
+    if (dishType && !categoryOptions.some((category) => category.toLowerCase() === dishType.toLowerCase())) {
+      setCategoryOptions((prev) => [...prev, dishType]);
+    }
+  }, [dishType, categoryOptions]);
 
   useEffect(() => {
   return () => {
@@ -46,6 +81,53 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
     }
   };
 }, [dishImagePreview]);
+
+  const persistNewDishCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+
+    if (!trimmedName) {
+      alert('Please enter a category name.');
+      return null;
+    }
+
+    const existingCategory = categoryOptions.find(
+      (category) => category.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+
+    if (existingCategory) {
+      const nextCategories = Array.from(new Set([...categoryOptions, existingCategory]));
+      setCategoryOptions(nextCategories);
+      setStoredStallCategoryList('stallCategories', nextCategories);
+      setDishType(existingCategory);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return existingCategory;
+    }
+
+    try {
+      const updated = await apiRequest<{ stallCategories?: string[] }>(`/api/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          stallCategories: [...categoryOptions, trimmedName],
+        }),
+      });
+
+      const nextCategories = setStoredStallCategoryList(
+        'stallCategories',
+        updated.stallCategories ?? [...categoryOptions, trimmedName],
+      );
+
+      setCategoryOptions(nextCategories);
+      setDishType(trimmedName);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return trimmedName;
+    } catch (error) {
+      console.error('Failed to create dish category:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create category.');
+      return null;
+    }
+  };
 
   const resizeImageToDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -122,11 +204,21 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   };
 
   const handleSave = async () => {
+    let selectedCategory = dishType;
+
+    if (showNewCategoryInput) {
+      const createdCategory = await persistNewDishCategory();
+      if (!createdCategory) {
+        return;
+      }
+      selectedCategory = createdCategory;
+    }
+
     const menuItem = {
       ...(item ? { id: item.id } : {}),
       name: dishName,
       price: parseFloat(price),
-      category: dishType,
+      category: selectedCategory,
       ingredients,
       image: dishImage ?? null,
     };
@@ -210,8 +302,95 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
   const displayedImage = dishImagePreview || dishImage;
   const allIngredientsZero = ingredients.length > 0 && ingredients.every(ing => ing.quantity === 0);
   
+  {/* Delete Confirmation */}
+  if (item && ingredientToDelete !== null) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-6 text-base text-gray-700">
+            Are you sure you want to remove{' '}
+            <span className="font-bold text-gray-900">
+              {ingredients[ingredientToDelete]?.inventoryItemName}
+            </span>{' '}
+            from this dish?
+          </p>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setIngredientToDelete(null)}
+              className="rounded-lg bg-gray-600 px-5 py-3 font-bold text-white transition-colors active:bg-gray-700"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={() => {
+                if (ingredientToDelete !== null) {
+                  removeIngredient(ingredientToDelete);
+                }
+                setIngredientToDelete(null);
+              }}
+              className="rounded-lg bg-red-600 px-5 py-3 font-bold text-white transition-colors active:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item && onDelete && showDeleteConfirm) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-3 text-base text-gray-700">
+            Are you sure you want to delete this dish from your menu?
+          </p>
+
+          <p className="mb-6 text-base text-gray-700">
+            If this dish has sales history, do you want to keep those sales records or delete them too?
+          </p>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={async () => {
+                await onDelete(item.id, 'keep');
+                setShowDeleteConfirm(false);
+              }}
+              className="w-full rounded-lg bg-orange-600 px-5 py-3 font-bold text-white transition-colors active:bg-orange-700"
+            >
+              Delete Dish, Keep Sales History
+            </button>
+
+            <button
+              onClick={async () => {
+                await onDelete(item.id, 'delete');
+                setShowDeleteConfirm(false);
+              }}
+              className="w-full rounded-lg bg-red-600 px-5 py-3 font-bold text-white transition-colors active:bg-red-700"
+            >
+              Delete Dish and Sales History
+            </button>
+
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="w-full rounded-lg bg-gray-600 px-5 py-3 font-bold text-white transition-colors active:bg-gray-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-white">
+    <div className="h-full bg-white">
       {/* Header */}
       <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10">
         <h1 className="text-2xl font-bold text-gray-900">
@@ -225,7 +404,7 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
         </button>
       </div>
 
-      <div className="p-4 pb-24">
+      <div className="p-4 pb-6">
         {/* Top Section: Basic Info */}
         <div className="mb-6">
           
@@ -240,6 +419,7 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
                 accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
+                style={{ display: 'none' }}
                 id="dish-image-upload"
               />
               <label
@@ -260,7 +440,7 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
                     </div>
                   </div>
                 ) : (
-                  <div className="w-24 h-24 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center active:bg-gray-200 transition-colors">
+                  <div className="w-24 h-24 p-3 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center active:bg-gray-200 transition-colors">
                     <Plus size={32} strokeWidth={2.5} className="text-gray-600" />
                   </div>
                 )}
@@ -268,6 +448,59 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
             </div>
           </div>
           
+          {/* Voice input button */}
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={voiceState === 'processing'}
+            className={`flex items-center gap-2 mb-4 px-3 py-2 border-2 rounded-lg transition-colors ${
+              voiceState === 'recording'
+                ? 'border-red-500 bg-red-50 animate-pulse'
+                : voiceState === 'processing'
+                ? 'border-orange-300 bg-orange-50 opacity-70'
+                : voiceState === 'done'
+                ? 'border-green-500 bg-green-50'
+                : voiceState === 'error'
+                ? 'border-red-300 bg-red-50'
+                : 'border-gray-200 bg-gray-50'
+            }`}
+          >
+            <img src={microphoneImg} alt="Voice input" className="w-5 h-5" />
+            <span className={`text-sm font-bold ${
+              voiceState === 'recording' ? 'text-red-600'
+              : voiceState === 'processing' ? 'text-orange-600'
+              : voiceState === 'done' ? 'text-green-600'
+              : voiceState === 'error' ? 'text-red-500'
+              : 'text-gray-600'
+            }`}>
+              {voiceState === 'recording'
+                ? 'Stop Recording'
+                : voiceState === 'processing'
+                ? 'Processing…'
+                : voiceState === 'done'
+                ? 'Fields Filled ✓'
+                : voiceState === 'error'
+                ? 'Try Again'
+                : 'Voice Input'}
+            </span>
+          </button>
+          {voiceState === 'idle' && (
+            <p className="text-xs text-gray-400 mb-2">
+              Say: “[dish name], [rice dish / noodle dish], price [amount]”
+            </p>
+          )}
+          {voiceState === 'done' && transcript && (
+            <p className="text-xs text-gray-500 mb-2 italic">“{transcript}”</p>
+          )}
+          {voiceState === 'error' && voiceError && (
+            <p className="text-xs text-red-500 mb-2">{voiceError}</p>
+          )}
+          {(voiceState === 'recording' || voiceState === 'processing') && (
+            <p className="text-xs text-gray-400 mb-2">
+              {voiceState === 'recording' ? 'Tap again when done speaking…' : 'Sending to Google Speech-to-Text…'}
+            </p>
+          )}
+
           {/* Dish Name */}
           <div className="mb-4">
             <label className="block text-gray-900 font-bold mb-2 text-lg">
@@ -287,18 +520,40 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           <div className="mb-4">
             <label className="block text-gray-900 font-bold mb-2 text-lg">Category *</label>
             <select
-              value={dishType}
-              onChange={(e) => setDishType(e.target.value)}
+              required={!showNewCategoryInput}
+              value={showNewCategoryInput ? 'ADD_NEW_CATEGORY' : dishType}
+              onChange={(e) => {
+                if (e.target.value === 'ADD_NEW_CATEGORY') {
+                  setDishType('');
+                  setNewCategoryName('');
+                  setShowNewCategoryInput(true);
+                } else {
+                  setDishType(e.target.value);
+                  setShowNewCategoryInput(false);
+                }
+              }}
               className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
             >
-              <option value="Rice Dishes">Rice Dish</option>
-              <option value="Noodle Dishes">Noodle Dish</option>
-              {/*<option value="Appetizer">Appetizer</option>*/}
-              {/*<option value="Main Course">Main Course</option>*/}
-              {/*<option value="Dessert">Dessert</option>*/}
-              {/*<option value="Beverage">Beverage</option>*/}
-              <option value="Other">Other</option>
+              <option value="">Select category</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+              <option value="ADD_NEW_CATEGORY">+ Add New Category...</option>
             </select>
+
+            {showNewCategoryInput && (
+              <input
+                type="text"
+                required
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="New dish category"
+                autoFocus
+                className="mt-2 w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
+              />
+            )}
           </div>
 
           {/* Selling Price */}
@@ -420,22 +675,11 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           </div>
         </div>
 
-        {/* Delete Button - Above Save Button */}
-        {item && onDelete && (
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mb-3"
-          >
-            <Trash2 size={28} strokeWidth={2.5} />
-            Delete Dish
-          </button>
-        )}
-
         {/* Save Button */}
         <button
           onClick={handleSave}
           disabled={!dishName || !price || ingredients.length === 0 || allIngredientsZero}
-          className="w-full bg-orange-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4 mb-4"
         >
           <Save size={28} strokeWidth={2.5} />
           Save Dish
@@ -475,52 +719,17 @@ export default function EditMenuItem({ item, inventoryItems, onSave, onCancel, o
           </div>
         )}
 
-        {/* Delete Confirmation */}
-        {showDeleteConfirm && (
-          <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full mx-4">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
-              <p className="text-gray-600 mb-3">
-                Are you sure you want to delete this dish from your menu.
-              </p>
-              <p className="text-gray-600 mb-6">
-                If this dish has sales history, do you want to keep those sales records or delete them too?
-              </p>
-
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={async () => {
-                    if (item && onDelete) {
-                      await onDelete(item.id, 'keep');
-                    }
-                    setShowDeleteConfirm(false);
-                  }}
-                  className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold active:bg-orange-700 transition-colors"
-                >
-                  Delete Dish, Keep Sales History
-                </button>
-
-                <button
-                  onClick={async () => {
-                    if (item && onDelete) {
-                      await onDelete(item.id, 'delete');
-                    }
-                    setShowDeleteConfirm(false);
-                  }}
-                  className="w-full bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
-                >
-                  Delete Dish and Sales History
-                </button>
-
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="w-full bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Delete Button */}
+        {item && onDelete && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className={`w-full border-2 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 transition-colors mb-4 ${
+                'bg-white border-red-600 text-red-600 active:bg-red-50'
+            }`}
+          >
+            <Trash2 size={28} strokeWidth={2.5} />
+            Delete Dish
+          </button>
         )}
       </div>
     </div>

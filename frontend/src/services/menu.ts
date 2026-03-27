@@ -27,3 +27,12 @@ export function deleteMenuItem(
     method: 'DELETE',
   });
 }
+
+export interface MenuItemDeleteInfo {
+  hasSales: boolean;
+  salesCount: number;
+}
+
+export function getMenuItemDeleteInfo(id: string) {
+  return apiRequest<MenuItemDeleteInfo>(`/api/menu/${id}/delete-info`);
+}
