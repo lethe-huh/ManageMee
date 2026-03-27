@@ -743,6 +743,12 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                   <p className="text-gray-600 font-bold">{item.pendingRestock!.supplier}</p>
                                   <p className="text-gray-900 font-bold">${item.pendingRestock!.estimatedCost.toFixed(2)}</p>
                                 </div>
+                                <button
+                                  onClick={() => handleMarkReceived(item)}
+                                  className="w-full bg-yellow-600 text-white rounded-lg p-2 font-bold text-sm active:bg-yellow-700 transition-colors"
+                                >
+                                  Mark as Received
+                                </button>
                               </div>
                             )}
 
