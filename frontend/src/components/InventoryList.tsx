@@ -8,6 +8,7 @@ import { InventoryItem, InventoryItemPayload, PendingRestock } from '../types/in
 import { createInventoryItem, deleteInventoryItem, getInventory, updateInventoryItem } from '../services/inventory';
 import { getMenuItems } from '../services/menu';
 import type { MenuItem } from '../types/menu';
+import { API_BASE_WITH_API } from '../utils/apiBase';
 
 interface InventoryListProps {
   initialSubTab?: 'stock' | 'restock';
@@ -60,12 +61,10 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
 
   const loadInventory = useCallback(async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-      
       // Fetch inventory and today's forecast in parallel for performance
       const [inventory, forecastRes] = await Promise.all([
         getInventory(),
-        fetch(`${API_URL}/forecast/today`).catch(() => null)
+        fetch(`${API_BASE_WITH_API}/forecast/today`).catch(() => null)
       ]);
 
       let forecastMinMap = new Map<string, number>();

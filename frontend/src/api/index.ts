@@ -1,7 +1,6 @@
 import type { InventoryItem, Supplier, SupplierPrice } from '../types/inventory';
 import type { MenuItem } from '../types/menu';
-
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3001';
+import { API_BASE } from '../utils/apiBase';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
