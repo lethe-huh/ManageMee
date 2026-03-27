@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js" 
   output   = "../src/generated/prisma"
 }
 
@@ -52,7 +52,6 @@ model MenuItem {
   price       Float
   category    String
   image       String?
-
   ingredients RecipeIngredient[]
   sales       SaleRecord[]
 }
@@ -78,9 +77,8 @@ model SaleRecord {
   menuItemName String
   quantity     Int
   timestamp    DateTime @default(now())
-
+  menuItemPrice Float
   menuItem     MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
-
   @@index([menuItemId])
   @@index([timestamp])
 }

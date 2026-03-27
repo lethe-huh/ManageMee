@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/index.js';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as dotenv from 'dotenv';
@@ -34,7 +34,7 @@ async function main() {
 
   console.log('Seeding inventory items...');
   const chicken = await prisma.inventoryItem.create({
-    data: { name: 'Whole Chicken', category: 'Meat', quantity: 50, unit: 'kg', minQuantity: 15, supplier: meatSupplier.name, targetPrice: 4.5 },
+    data: { name: 'Whole Chicken', category: 'Protein', quantity: 50, unit: 'kg', minQuantity: 15, supplier: meatSupplier.name, targetPrice: 4.5 },
   });
   const rice = await prisma.inventoryItem.create({
     data: { name: 'Jasmine Rice', category: 'Rice', quantity: 100, unit: 'kg', minQuantity: 25, supplier: dryGoodsSupplier.name, targetPrice: 1.2 },
@@ -46,7 +46,7 @@ async function main() {
     data: { name: 'Bok Choy', category: 'Vegetables', quantity: 10, unit: 'kg', minQuantity: 3, supplier: vegSupplier.name, targetPrice: 3.0 },
   });
   const soySauce = await prisma.inventoryItem.create({
-    data: { name: 'Dark Soy Sauce', category: 'Sauces', quantity: 5, unit: 'L', minQuantity: 1, supplier: dryGoodsSupplier.name, targetPrice: 5.5 },
+    data: { name: 'Dark Soy Sauce', category: 'Condiments', quantity: 5, unit: 'L', minQuantity: 1, supplier: dryGoodsSupplier.name, targetPrice: 5.5 },
   });
 
   console.log('Seeding supplier prices...');
@@ -108,6 +108,7 @@ async function main() {
           menuItemId: randomDish.id,
           menuItemName: randomDish.name,
           quantity: quantity,
+          menuItemPrice: randomDish.price,
           timestamp: saleTime,
         }
       });
