@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Save, Trash2, Plus, Edit2 } from 'lucide-react';
 import { InventoryItem, Supplier } from '../types/inventory';
 import { createSupplier, getSuppliers } from '../services/suppliers';
-import { categories, getUnitsForCategory } from '../data/constants';
+import { getSupplierPrices } from '../services/supplierPrices';
+import { getStoredIngredientCategories, setStoredStallCategoryList } from '../services/auth';
+import { apiRequest } from '../services/api';
+import { getUnitsForCategory } from '../data/constants';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { parseIngredientTranscript } from '../utils/voiceParsers';
 import microphoneImg from '../assets/microphone.png';
@@ -16,44 +19,68 @@ interface AddEditItemProps {
 }
 
 export default function AddEditItem({ item, onSave, onCancel, onDelete, isDeleteDisabled = false }: AddEditItemProps) {
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(() =>
+    Array.from(
+      new Set([
+        ...getStoredIngredientCategories(),
+        ...(item?.category ? [item.category] : []),
+      ]),
+    ),
+  );
+
   const [formData, setFormData] = useState({
     name: item?.name || '',
-    category: item?.category || '',
+    category: item?.category || categoryOptions[0] || '',
     quantity: item?.quantity?.toString() || '',
     unit: item?.unit || 'kg',
     minQuantity: item?.minQuantity?.toString() || '',
     supplier: item?.supplier || '',
-    targetPrice: item?.targetPrice?.toString() || ''
+    targetPrice: item?.targetPrice?.toString() || '',
+    supplierPrice: '',
   });
   const [itemImage, setItemImage] = useState<string | undefined>((item as any)?.image);
   const [itemImagePreview, setItemImagePreview] = useState<string | undefined>((item as any)?.image);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierContact, setNewSupplierContact] = useState('');
   const [showNewSupplierInput, setShowNewSupplierInput] = useState(false);
   const [supplierOptions, setSupplierOptions] = useState<Supplier[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [isLoadingSupplierPrice, setIsLoadingSupplierPrice] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { voiceState, transcript, voiceError, toggle, resultCount } = useVoiceInput();
 
-  // Populate form fields when voice transcript is ready.
+  const selectedSupplier = useMemo(
+    () => supplierOptions.find((supplier) => supplier.id === selectedSupplierId) ?? null,
+    [selectedSupplierId, supplierOptions],
+  );
+
+  useEffect(() => {
+    if (formData.category && !categoryOptions.some((category) => category.toLowerCase() === formData.category.toLowerCase())) {
+      setCategoryOptions((prev) => [...prev, formData.category]);
+    }
+  }, [formData.category, categoryOptions]);
+
   useEffect(() => {
     if (voiceState === 'done' && transcript) {
       const parsed = parseIngredientTranscript(
         transcript,
         supplierOptions.map((s) => s.name),
-        categories
+        categoryOptions,
       );
       setFormData((prev) => ({
         ...prev,
-        ...(parsed.name        && { name: parsed.name }),
-        ...(parsed.category    && { category: parsed.category }),
-        ...(parsed.quantity    && { quantity: parsed.quantity }),
-        ...(parsed.unit        && { unit: parsed.unit }),
+        ...(parsed.name && { name: parsed.name }),
+        ...(parsed.category && { category: parsed.category }),
+        ...(parsed.quantity && { quantity: parsed.quantity }),
+        ...(parsed.unit && { unit: parsed.unit }),
         ...(parsed.minQuantity && { minQuantity: parsed.minQuantity }),
-        ...(parsed.supplier    && { supplier: parsed.supplier }),
+        ...(parsed.supplier && { supplier: parsed.supplier }),
         ...(parsed.targetPrice && { targetPrice: parsed.targetPrice }),
       }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultCount, supplierOptions]);
+  }, [resultCount, supplierOptions, categoryOptions, transcript, voiceState]);
 
   const availableUnits = getUnitsForCategory(formData.category);
 
@@ -70,10 +97,63 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
     void loadSuppliers();
   }, []);
 
-  // Update unit when category changes if current unit is not available
+  useEffect(() => {
+    if (showNewSupplierInput) {
+      setSelectedSupplierId('');
+      return;
+    }
+
+    if (!formData.supplier || supplierOptions.length === 0) {
+      return;
+    }
+
+    const matchedSupplier = supplierOptions.find(
+      (supplier) => supplier.name.trim().toLowerCase() === formData.supplier.trim().toLowerCase(),
+    );
+
+    if (matchedSupplier) {
+      setSelectedSupplierId(matchedSupplier.id);
+    }
+  }, [formData.supplier, showNewSupplierInput, supplierOptions]);
+
+  useEffect(() => {
+    if (!item?.id || showNewSupplierInput || !selectedSupplierId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSupplierPrice = async () => {
+      try {
+        setIsLoadingSupplierPrice(true);
+        const prices = await getSupplierPrices(item.id);
+        const matchedPrice = prices.find((price) => price.supplierId === selectedSupplierId);
+
+        if (!cancelled) {
+          setFormData((prev) => ({
+            ...prev,
+            supplierPrice: matchedPrice ? matchedPrice.price.toString() : '',
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load supplier price:', error);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSupplierPrice(false);
+        }
+      }
+    };
+
+    void loadSupplierPrice();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [item?.id, selectedSupplierId, showNewSupplierInput]);
+
   useEffect(() => {
     if (formData.category && !availableUnits.includes(formData.unit)) {
-      setFormData(prev => ({ ...prev, unit: availableUnits[0] || 'kg' }));
+      setFormData((prev) => ({ ...prev, unit: availableUnits[0] || 'kg' }));
     }
   }, [formData.category, formData.unit, availableUnits]);
 
@@ -159,54 +239,140 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
     }
   };
 
+  const persistNewIngredientCategory = async () => {
+    const trimmedName = newCategoryName.trim();
+
+    if (!trimmedName) {
+      alert('Please enter a category name.');
+      return null;
+    }
+
+    const existingCategory = categoryOptions.find(
+      (category) => category.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+
+    if (existingCategory) {
+      const nextCategories = Array.from(new Set([...categoryOptions, existingCategory]));
+      setCategoryOptions(nextCategories);
+      setStoredStallCategoryList('ingredientCategories', nextCategories);
+      setFormData((prev) => ({ ...prev, category: existingCategory }));
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return existingCategory;
+    }
+
+    try {
+      const updated = await apiRequest<{ ingredientCategories?: string[] }>(`/api/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ingredientCategories: [...categoryOptions, trimmedName],
+        }),
+      });
+
+      const nextCategories = setStoredStallCategoryList(
+        'ingredientCategories',
+        updated.ingredientCategories ?? [...categoryOptions, trimmedName],
+      );
+
+      setCategoryOptions(nextCategories);
+      setFormData((prev) => ({ ...prev, category: trimmedName }));
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      return trimmedName;
+    } catch (error) {
+      console.error('Failed to create ingredient category:', error);
+      alert(error instanceof Error ? error.message : 'Failed to create category.');
+      return null;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    let categoryName = formData.category;
+
+    if (showNewCategoryInput) {
+      const createdCategory = await persistNewIngredientCategory();
+      if (!createdCategory) {
+        return;
+      }
+      categoryName = createdCategory;
+    }
+
     let supplierName = formData.supplier;
+    let supplierId = selectedSupplierId;
+    let supplierContact: string | undefined = selectedSupplier?.phone;
 
     if (showNewSupplierInput) {
       const trimmedName = newSupplierName.trim();
+      const trimmedContact = newSupplierContact.trim();
 
       if (!trimmedName) {
         alert('Please enter a supplier name.');
         return;
       }
 
+      if (!trimmedContact) {
+        alert('Please enter supplier contact details.');
+        return;
+      }
+
       const existingSupplier = supplierOptions.find(
-        (supplier) => supplier.name.trim().toLowerCase() === trimmedName.toLowerCase()
+        (supplier) => supplier.name.trim().toLowerCase() === trimmedName.toLowerCase(),
       );
 
       if (existingSupplier) {
         supplierName = existingSupplier.name;
+        supplierId = existingSupplier.id;
+        supplierContact = existingSupplier.phone;
       } else {
         try {
           const createdSupplier = await createSupplier({
             name: trimmedName,
-            phone: '-',
+            phone: trimmedContact,
             items: [],
           });
 
-          setSupplierOptions((prev) => [...prev, createdSupplier]);
+          setSupplierOptions((prev) =>
+            [...prev, createdSupplier].sort((a, b) => a.name.localeCompare(b.name)),
+          );
           supplierName = createdSupplier.name;
+          supplierId = createdSupplier.id;
+          supplierContact = createdSupplier.phone;
         } catch (error) {
           console.error('Failed to create supplier:', error);
-          alert('Failed to create supplier.');
+          alert(error instanceof Error ? error.message : 'Failed to create supplier.');
           return;
         }
       }
     }
 
+    if (!supplierName || !supplierId) {
+      alert('Please select a supplier.');
+      return;
+    }
+
+    const normalizedSupplierPrice = Number.parseFloat(formData.supplierPrice);
+
+    if (!Number.isFinite(normalizedSupplierPrice) || normalizedSupplierPrice < 0) {
+      alert('Please enter a valid supplier price.');
+      return;
+    }
+
     const itemData = {
       ...item,
       name: formData.name,
-      category: formData.category,
+      category: categoryName,
       quantity: parseFloat(formData.quantity),
       unit: formData.unit,
       minQuantity: parseFloat(formData.minQuantity),
       supplier: supplierName,
       targetPrice: parseFloat(formData.targetPrice) || 0,
+      supplierId,
+      supplierContact,
+      supplierPrice: normalizedSupplierPrice,
       image: itemImage ?? null,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
     };
 
     await onSave(itemData as InventoryItem);
@@ -214,9 +380,50 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
 
   const displayedImage = itemImagePreview || itemImage;
 
+  if (item && onDelete && !isDeleteDisabled && showDeleteConfirm) {
+    return (
+      <div className="h-full bg-black px-4 py-6 flex items-center justify-center">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+          <h2 className="mb-4 text-xl font-bold text-gray-900">Confirm Delete</h2>
+
+          <p className="mb-6 text-base text-gray-700">
+            Are you sure you want to delete this ingredient?
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await onDelete(item.id);
+                  setShowDeleteConfirm(false);
+                } catch (error) {
+                  console.error('Failed to delete ingredient:', error);
+                }
+              }}
+              className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const supplierSelectValue = showNewSupplierInput
+    ? 'ADD_NEW'
+    : selectedSupplierId || (formData.supplier ? '__CURRENT_SUPPLIER__' : '');
+
   return (
-    <div className="p-3">
-      {/* Header */}
+    <div className="relative h-full p-3">
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">
           {item ? 'Edit Ingredient' : 'New Ingredient'}
@@ -229,7 +436,6 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
         </button>
       </div>
 
-      {/* Item Image Upload */}
       <div className="mb-6 flex justify-center">
         <div className="relative">
           <input
@@ -266,7 +472,6 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
         </div>
       </div>
 
-      {/* Voice input button */}
       <button
         type="button"
         onClick={toggle}
@@ -318,9 +523,8 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
           {voiceState === 'recording' ? 'Tap again when done speaking…' : 'Sending to Google Speech-to-Text…'}
         </p>
       )}
-      {/* Form */}
+
       <form onSubmit={handleSubmit} className="space-y-4 pb-24">
-        {/* Item Name */}
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Item Name *
@@ -335,61 +539,78 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
           />
         </div>
 
-        {/* Category */}
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Category *
           </label>
           <select
-            required
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+            required={!showNewCategoryInput}
+            value={showNewCategoryInput ? 'ADD_NEW_CATEGORY' : formData.category}
+            onChange={(e) => {
+              if (e.target.value === 'ADD_NEW_CATEGORY') {
+                setFormData({ ...formData, category: '' });
+                setNewCategoryName('');
+                setShowNewCategoryInput(true);
+              } else {
+                setFormData({ ...formData, category: e.target.value });
+                setShowNewCategoryInput(false);
+              }
+            }}
             className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           >
             <option value="">Select category</option>
-            {categories.map(cat => (
+            {categoryOptions.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
+            <option value="ADD_NEW_CATEGORY">+ Add New Category...</option>
           </select>
+
+          {showNewCategoryInput && (
+            <input
+              type="text"
+              required
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="New ingredient category"
+              autoFocus
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600 mt-2"
+            />
+          )}
         </div>
 
-        {/* Quantity and Unit — only shown when creating a new ingredient */}
-        {!item && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-gray-900 font-bold mb-1 text-base">
-                Quantity *
-              </label>
-              <input
-                type="number"
-                required
-                step="0.1"
-                min="0"
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                placeholder="0.0"
-                className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-900 font-bold mb-1 text-base">
-                Unit *
-              </label>
-              <select
-                required
-                value={formData.unit}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-              >
-                {availableUnits.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
-              </select>
-            </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-gray-900 font-bold mb-1 text-base">
+              Quantity *
+            </label>
+            <input
+              type="number"
+              required
+              step="0.1"
+              min="0"
+              value={formData.quantity}
+              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+              placeholder="0.0"
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-900 font-bold mb-1 text-base">
+              Unit *
+            </label>
+            <select
+              required
+              value={formData.unit}
+              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+            >
+              {availableUnits.map((unit) => (
+                <option key={unit} value={unit}>{unit}</option>
+              ))}
+            </select>
           </div>
         )}
 
-        {/* Minimum Quantity */}
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Minimum Quantity *
@@ -406,7 +627,6 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
           />
         </div>
 
-        {/* Supplier */}
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Supplier *
@@ -414,42 +634,100 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
 
           <select
             required={!showNewSupplierInput}
-            value={showNewSupplierInput ? 'ADD_NEW' : formData.supplier || ''}
+            value={supplierSelectValue}
             onChange={(e) => {
               if (e.target.value === 'ADD_NEW') {
-                setFormData({ ...formData, supplier: '' });
+                setFormData((prev) => ({ ...prev, supplier: '' }));
                 setNewSupplierName('');
+                setNewSupplierContact('');
+                setSelectedSupplierId('');
                 setShowNewSupplierInput(true);
-              } else {
-                setFormData({ ...formData, supplier: e.target.value });
-                setShowNewSupplierInput(false);
+                return;
               }
+
+              if (e.target.value === '__CURRENT_SUPPLIER__') {
+                return;
+              }
+
+              const matchedSupplier = supplierOptions.find((supplier) => supplier.id === e.target.value);
+              setFormData((prev) => ({
+                ...prev,
+                supplier: matchedSupplier?.name ?? '',
+              }));
+              setSelectedSupplierId(matchedSupplier?.id ?? '');
+              setShowNewSupplierInput(false);
             }}
             className="w-full p-4 border-2 border-gray-300 rounded-lg font-bold text-lg focus:outline-none focus:border-orange-600"
           >
             <option value="">Select supplier</option>
+            {!selectedSupplierId && formData.supplier && !showNewSupplierInput && (
+              <option value="__CURRENT_SUPPLIER__">{formData.supplier}</option>
+            )}
             {supplierOptions.map((supplier) => (
-              <option key={supplier.id} value={supplier.name}>
+              <option key={supplier.id} value={supplier.id}>
                 {supplier.name}
               </option>
             ))}
             <option value="ADD_NEW">+ Add New Supplier...</option>
           </select>
 
-          {showNewSupplierInput && (
-            <input
-              type="text"
-              required
-              value={newSupplierName}
-              onChange={(e) => setNewSupplierName(e.target.value)}
-              placeholder="New supplier name"
-              autoFocus
-              className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600 mt-2"
-            />
-          )}
+          {showNewSupplierInput ? (
+            <div className="mt-3 rounded-2xl border-2 border-orange-600 p-4">
+              {/* <p className="mb-3 text-lg font-bold text-gray-900">Add New Supplier:</p> */}
+              
+              <div className="space-y-3">
+                <label className="block text-gray-900 font-bold mb-1 text-base">Supplier Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="New supplier name"
+                  autoFocus
+                  className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+                />
+                <label className="block text-gray-900 font-bold mb-1 text-base">Supplier Contact *</label>
+                <input
+                  type="text"
+                  required
+                  value={newSupplierContact}
+                  onChange={(e) => setNewSupplierContact(e.target.value)}
+                  placeholder="Supplier contact number"
+                  className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+                />
+              </div>
+            </div>
+          ) : selectedSupplier?.phone ? (
+            <p className="mt-2 text-sm font-bold text-gray-600">
+              Contact: {selectedSupplier.phone}
+            </p>
+          ) : null}
         </div>
 
-        {/* Target Price */}
+        <div>
+          <label className="block text-gray-900 font-bold mb-1 text-base">
+            Supplier Price (per {formData.unit}) *
+          </label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-bold text-gray-600">$</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              value={formData.supplierPrice}
+              onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })}
+              placeholder="0.00"
+              className="w-full pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
+              style={{ paddingLeft: '30px' }}
+            />
+          </div>
+          {isLoadingSupplierPrice && item && (
+            <p className="text-xs text-gray-500 mt-2">Loading saved supplier price...</p>
+          )}
+        </div>
+          
+        {false && (
         <div>
           <label className="block text-gray-900 font-bold mb-1 text-base">
             Target Price (per {formData.unit})
@@ -464,12 +742,20 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
               onChange={(e) => setFormData({ ...formData, targetPrice: e.target.value })}
               placeholder="0.00"
               className="w-full pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-              style={{paddingLeft: "30px"}}
+              style={{ paddingLeft: '30px' }}
             />
           </div>
         </div>
+        )}
 
-        {/* Delete Button */}
+        <button
+          type="submit"
+          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4 mb-2"
+        >
+          <Save size={22} strokeWidth={2.5} />
+          Save Ingredient
+        </button>
+
         {item && onDelete && (
           <button
             type="button"
@@ -479,7 +765,11 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
                 setShowDeleteConfirm(true);
               }
             }}
-            className="w-full bg-red-600 text-white rounded-lg p-5 font-bold text-xl flex items-center justify-center gap-3 active:bg-red-700 transition-colors mt-6 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className={`w-full border-2 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 transition-colors mb-4 ${
+              isDeleteDisabled
+                ? 'bg-gray-400 border-gray-400 text-white cursor-not-allowed'
+                : 'bg-white border-red-600 text-red-600 active:bg-red-50'
+            }`}
           >
             <Trash2 size={28} strokeWidth={2.5} />
             Delete Ingredient
@@ -491,86 +781,7 @@ export default function AddEditItem({ item, onSave, onCancel, onDelete, isDelete
             This ingredient cannot be deleted because it is used in a dish.
           </p>
         )}
-
-        {/* Save Button */}
-        <button
-          type="submit"
-          className="w-full bg-orange-600 text-white rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-orange-700 transition-colors mt-4 mb-2"
-        >
-          <Save size={22} strokeWidth={2.5} />
-          Save Ingredient
-        </button>
-
-        {/* Delete Button (edit mode only) */}
-        {item && onDelete && (
-          <>
-            {!showDeleteConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="w-full bg-white border-2 border-red-600 text-red-600 rounded-lg p-3 font-bold text-lg flex items-center justify-center gap-3 active:bg-red-50 transition-colors mb-4"
-              >
-                <Trash2 size={22} strokeWidth={2.5} />
-                Delete Ingredient
-              </button>
-            ) : (
-              <div className="border-2 border-red-600 rounded-lg p-3 mb-4">
-                <p className="text-red-700 font-bold text-center mb-3">Delete this ingredient?</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onDelete(item.id)}
-                    className="flex-1 bg-red-600 text-white rounded-lg p-2 font-bold active:bg-red-700"
-                  >
-                    Yes, Delete
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 rounded-lg p-2 font-bold active:bg-gray-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
       </form>
-
-      {item && onDelete && !isDeleteDisabled && showDeleteConfirm && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Confirm Delete</h2>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete this ingredient?
-            </p>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="bg-gray-600 text-white rounded-lg p-3 font-bold active:bg-gray-700 transition-colors mr-3"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await onDelete(item.id);
-                    setShowDeleteConfirm(false);
-                  } catch (error) {
-                    console.error('Failed to delete ingredient:', error);
-                  }
-                }}
-                className="bg-red-600 text-white rounded-lg p-3 font-bold active:bg-red-700 transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

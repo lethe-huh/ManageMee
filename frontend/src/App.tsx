@@ -3,13 +3,16 @@ import Dashboard from './components/Dashboard';
 import InventoryList from './components/InventoryList';
 import MenuManager from './components/MenuManager';
 import Settings from './components/Settings';
-import Login from './components/Login';
+// import Login from './components/Login';
+import Landing from './components/Landing';
 import IPhoneFrame from './components/IPhoneFrame';
 import { Home, Package, ChefHat, SettingsIcon } from 'lucide-react';
+import { getStoredAuthSession } from './services/auth';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'inventory' | 'menu' | 'settings'>('home');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getStoredAuthSession()));
   const [inventorySubTab, setInventorySubTab] = useState<'stock' | 'restock'>('stock');
   const [menuSubTab, setMenuSubTab] = useState<'all' | 'work'>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -17,6 +20,16 @@ export default function App() {
 
   const handleLogin = () => {
     setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('managemee-auth');
+    setIsAuthenticated(false);
+    setActiveTab('home');
+    setInventorySubTab('stock');
+    setMenuSubTab('all');
+    setIsFormOpen(false);
+    setSalesRefreshKey(0);
   };
 
   const navigateToWorkMode = () => {
@@ -29,55 +42,52 @@ export default function App() {
     setInventorySubTab('restock');
   };
 
-  // Show login screen if not authenticated
   if (!isAuthenticated) {
-    return (
-      <IPhoneFrame>
-        <Login onLogin={handleLogin} />
-      </IPhoneFrame>
-    );
+    return <Landing onLogin={handleLogin} />;
   }
 
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
-        return <Dashboard
-                 onNavigateToWorkMode={navigateToWorkMode}
-                 onNavigateToRestock={navigateToRestock}
-                 salesRefreshKey={salesRefreshKey}
-               />;
+        return (
+          <Dashboard
+            onNavigateToWorkMode={navigateToWorkMode}
+            onNavigateToRestock={navigateToRestock}
+            salesRefreshKey={salesRefreshKey}
+          />
+        );
       case 'inventory':
         return <InventoryList initialSubTab={inventorySubTab} onFormStateChange={setIsFormOpen} />;
       case 'menu':
-        return <MenuManager
-                 initialSubTab={menuSubTab}
-                 onFormStateChange={setIsFormOpen}
-                 onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)}
-                 onExitToHome={() => {
-                   setActiveTab('home');
-                   setMenuSubTab('all');
-                   setIsFormOpen(false);
-                 }}
-               />;
+        return (
+          <MenuManager
+            initialSubTab={menuSubTab}
+            onFormStateChange={setIsFormOpen}
+            onSaleRecorded={() => setSalesRefreshKey((prev) => prev + 1)}
+            onExitToHome={() => {
+              setActiveTab('home');
+              setMenuSubTab('all');
+              setIsFormOpen(false);
+            }}
+          />
+        );
       case 'settings':
-        return <Settings />;
+        return <Settings onLogout={handleLogout} onFormStateChange={setIsFormOpen} />;
       default:
-        return <Dashboard 
-                 onNavigateToWorkMode={navigateToWorkMode} 
-                 onNavigateToRestock={navigateToRestock} 
-               />;
+        return (
+          <Dashboard
+            onNavigateToWorkMode={navigateToWorkMode}
+            onNavigateToRestock={navigateToRestock}
+          />
+        );
     }
   };
 
   return (
     <IPhoneFrame>
       <div className="h-full bg-white flex flex-col">
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto min-h-0">
-          {renderContent()}
-        </main>
+        <main className="flex-1 overflow-y-auto min-h-0">{renderContent()}</main>
 
-        {/* Bottom Navigation - Hidden when form is open */}
         {!isFormOpen && (
           <nav className="bg-white border-t-2 border-gray-200 flex-shrink-0">
             <div className="grid grid-cols-4 h-20">
