@@ -9,7 +9,7 @@ import { createInventoryItem, deleteInventoryItem, getInventory, updateInventory
 import { createSupplierPrice, getSupplierPrices, updateSupplierPrice } from '../services/supplierPrices';
 import { getMenuItems } from '../services/menu';
 import type { MenuItem } from '../types/menu';
-import { API_BASE_WITH_API } from '../utils/apiBase';
+import { apiRequest } from '../services/api';
 
 interface InventoryListProps {
   initialSubTab?: 'stock' | 'restock';
@@ -84,13 +84,13 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
       // Fetch inventory and today's forecast in parallel for performance
       const [inventory, forecastRes] = await Promise.all([
         getInventory(),
-        fetch(`${API_BASE_WITH_API}/forecast/today`).catch(() => null)
+        apiRequest<any>('/api/forecast/today').catch(() => null)
       ]);
 
       const forecastMinMap = new Map<string, number>();
 
-      if (forecastRes && forecastRes.ok) {
-        const forecastData = await forecastRes.json();
+      if (forecastRes) {
+        const forecastData = forecastRes;
         if (forecastData.ingredientsNeeded) {
           forecastData.ingredientsNeeded.forEach((ingredient: { id: string; quantity: number }) => {
             forecastMinMap.set(ingredient.id, ingredient.quantity);
@@ -743,6 +743,12 @@ export default function InventoryList({ initialSubTab = 'stock', onFormStateChan
                                   <p className="text-gray-600 font-bold">{item.pendingRestock!.supplier}</p>
                                   <p className="text-gray-900 font-bold">${item.pendingRestock!.estimatedCost.toFixed(2)}</p>
                                 </div>
+                                <button
+                                  onClick={() => handleMarkReceived(item)}
+                                  className="w-full bg-yellow-600 text-white rounded-lg p-2 font-bold text-sm active:bg-yellow-700 transition-colors"
+                                >
+                                  Mark as Received
+                                </button>
                               </div>
                             )}
 

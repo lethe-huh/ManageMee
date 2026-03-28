@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+import { API_BASE } from '../utils/apiBase';
+
 const AUTH_STORAGE_KEY = 'managemee-auth';
 
 function getStoredStallId() {
@@ -28,7 +29,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     headers.set('x-stall-id', stallId);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers,
   });

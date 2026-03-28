@@ -1667,15 +1667,50 @@ app.get('/api/forecast/today', async (req, res) => {
       }
     });
 
+    const availableMenuItems = await prisma.menuItem.findMany({
+      where: { stallId },
+      include: {
+        ingredients: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const getSgtDayOfWeek = (timestamp: Date) =>
+      new Date(timestamp.getTime() + SGT_OFFSET_MS).getUTCDay();
+
+    const getSgtDateKey = (timestamp: Date) => {
+      const saleSgt = new Date(timestamp.getTime() + SGT_OFFSET_MS);
+      return `${saleSgt.getUTCFullYear()}-${saleSgt.getUTCMonth()}-${saleSgt.getUTCDate()}`;
+    };
+
     // 2. Filter historical sales strictly to the same day of the week
     const sameDaySales = historicalSales.filter(
-      sale => new Date(sale.timestamp).getDay() === currentDayOfWeek
+      sale => getSgtDayOfWeek(new Date(sale.timestamp)) === currentDayOfWeek
     );
+
+    const salesForForecast = sameDaySales.length > 0 ? sameDaySales : historicalSales;
+    const forecastSource =
+      sameDaySales.length > 0
+        ? 'same-weekday'
+        : historicalSales.length > 0
+          ? 'recent-history'
+          : 'menu-baseline';
+
+    const salesSampleDays = new Set(
+      salesForForecast.map((sale) => getSgtDateKey(new Date(sale.timestamp))),
+    ).size;
+
+    const averagingWindow =
+      forecastSource === 'same-weekday'
+        ? 4
+        : forecastSource === 'recent-history'
+          ? Math.max(salesSampleDays, 1)
+          : 1;
 
     // 3. Aggregate total portions sold per menu item
     const dishSalesCounts: Record<string, { totalQuantity: number, menuItem: any }> = {};
 
-    sameDaySales.forEach((sale) => {
+    salesForForecast.forEach((sale) => {
       if (!sale.menuItemId) return;
       const existingEntry = dishSalesCounts[sale.menuItemId];
 
@@ -1695,13 +1730,28 @@ app.get('/api/forecast/today', async (req, res) => {
     let totalAverageSales = 0;
 
     // Mock External Factors for the forecast algorithm
-    const weatherFactor = 0.9; // 10% reduction due to "Rainy" weather
+    const weatherFactor = forecastSource === 'menu-baseline' ? 1.0 : 0.9;
     const holidayFactor = 1.0; // 1.0 = No holiday effect
+
+    if (Object.keys(dishSalesCounts).length === 0) {
+      availableMenuItems.forEach((menuItem) => {
+        prepRecommendations.push({
+          id: menuItem.id,
+          name: menuItem.name,
+          prep: 1,
+          change: 0,
+          ingredients: menuItem.ingredients,
+        });
+
+        totalPredictedSales += menuItem.price;
+        totalAverageSales += menuItem.price;
+      });
+    }
 
     // 4. Calculate predictions per dish
     for (const [menuItemId, data] of Object.entries(dishSalesCounts)) {
-      // Average portions sold on this weekday over the last 4 weeks
-      const averagePortions = data.totalQuantity / 4; 
+      // Average portions sold over the selected forecast window.
+      const averagePortions = data.totalQuantity / averagingWindow;
       
       // Apply forecasting algorithm
       const predictedPortions = Math.ceil(averagePortions * weatherFactor * holidayFactor);
@@ -1757,11 +1807,18 @@ app.get('/api/forecast/today', async (req, res) => {
     const ingredientsNeeded = Array.from(ingredientsNeededMap.values())
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    const confidence =
+      forecastSource === 'same-weekday'
+        ? 'High (85%)'
+        : forecastSource === 'recent-history'
+          ? 'Medium (70%)'
+          : 'Low (55%)';
+
     // 6. Return payload matching frontend expectations
     res.json({
       date: nowSgt.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
       weather: 'Rainy',
-      confidence: 'High (85%)',
+      confidence,
       predictedSales: totalPredictedSales.toFixed(2),
       averageWeekdaySales: totalAverageSales.toFixed(2),
       prepRecommendations: prepRecommendations.map(p => ({
