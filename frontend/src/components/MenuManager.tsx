@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search, Mic, X, CheckCircle, Receipt } from 'lucide-react';
+import { Plus, Edit2, Zap, ChevronDown, ChevronRight, Search, Mic, X, CheckCircle, Receipt, ChefHat } from 'lucide-react';
 import { getStoredStallCategories } from '../services/auth';
 import wontonmeeImg from '../assets/wontonmee.png';
 import roastedcrImg from '../assets/roastedcr.png';
@@ -175,6 +175,23 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
       };
     }
   }, [activeTab, onFormStateChange]);
+
+  useEffect(() => {
+  const mainEl = document.querySelector('main');
+  if (!mainEl) return;
+
+  const previousOverflow = mainEl.style.overflow;
+
+  if (quickSaleItem) {
+    mainEl.style.overflow = 'hidden';
+  } else {
+    mainEl.style.overflow = previousOverflow || '';
+  }
+
+  return () => {
+    mainEl.style.overflow = previousOverflow;
+  };
+}, [quickSaleItem]);
 
   // 1. User taps a number button
   const initiateQuickSale = (item: MenuItem, quantity: number, e: React.MouseEvent) => {
@@ -472,29 +489,31 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
   }, {} as Record<string, MenuItem[]>);
 
   return (
-    <div className="p-4">
-        {/* Header */}
-        <div className="mb-6">
-          {activeTab === 'work' ? (
-            <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10 mb-4">
-              <h1 className="text-2xl font-bold text-gray-900">Track Orders</h1>
-              <button
-                onClick={handleExitToHome}
-                className="text-gray-600 active:bg-gray-100 p-2 rounded-lg transition-colors"
-              >
-                <X size={28} strokeWidth={2.5} />
-              </button>
-            </div>
-          ) : (
-            <div className="bg-orange-600 rounded-lg p-4 mb-4">
-              <h1 className="text-3xl font-bold text-white">Menu</h1>
-            </div>
-          )}
-        
-        {/* Search Bar */}
-        <div className="relative" style={{marginTop: '30px'}}>
-          <Search 
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-600" 
+    <div className="relative h-full overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 p-4 pb-0">
+        {activeTab === 'work' ? (
+          <div className="bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between z-10 mb-4">
+            <h1 className="text-2xl font-bold text-gray-900">Log Sales</h1>
+            <button
+              onClick={handleExitToHome}
+              className="text-gray-600 active:bg-gray-100 p-2 rounded-lg transition-colors"
+            >
+              <X size={28} strokeWidth={2.5} />
+            </button>
+          </div>
+        ) : (
+          <div className="bg-orange-600 rounded-lg p-4 mb-4">
+            <h1 className="text-3xl font-bold text-white">Menu</h1>
+          </div>
+        )}
+      </div>
+
+      {/* Menu Items by Category */}
+      <div className={`flex-1 min-h-0 overflow-y-auto px-4 ${activeTab === 'work' ? 'pb-28' : 'pb-4'}`}>
+        <div className="relative mt-2 mb-4">
+          <Search
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600"
             size={20}
             strokeWidth={2.5}
           />
@@ -503,29 +522,29 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
             placeholder="Search dishes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3  border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
-    
+            className="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-lg font-bold text-base focus:outline-none focus:border-orange-600"
           />
         </div>
 
-        {/* Add New Dish Button */}
-        <button
+        {activeTab !== 'work' && (
+          <button
             onClick={() => {
               setEditingItem(null);
               setShowEdit(true);
-              if (onFormStateChange) {  
+              if (onFormStateChange) {
                 onFormStateChange(true);
               }
             }}
-            className="w-full bg-orange-600 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mt-4"
+            className="w-full bg-orange-600 text-white rounded-lg p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-orange-700 transition-colors mb-4"
           >
             <Plus size={28} strokeWidth={2.5} />
             Add New Dish
           </button>
-      </div>
+        )}
 
-      {/* Menu Items by Category */}
-      <div className="space-y-2 mb-3">{configuredDishCategories.map(category => {
+      <div className="space-y-2 mb-3">{configuredDishCategories
+        .filter((category) => (groupedItems[category]?.length ?? 0) > 0)
+        .map(category => {
           const items = groupedItems[category] || [];
           const itemCount = items.length;
           const isCollapsed = collapsedCategories.has(category);
@@ -587,7 +606,9 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
                                       className="w-16 h-16 rounded-lg border-2 border-gray-300 object-cover"
                                     />
                                   ) : (
-                                    <div className="w-16 h-16 rounded-lg border-2 border-gray-300 bg-gray-100"></div>
+                                    <div className="w-16 h-16 rounded-lg border-2 border-gray-300 bg-gray-100 flex items-center justify-center">
+                                      <ChefHat size={28} className="text-gray-400" strokeWidth={2.5} />
+                                    </div>
                                   )}
                                 </div>
 
@@ -754,13 +775,14 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
           );
         })}
       </div>
+      </div>
 
       {activeTab === 'work' && !quickSaleItem && (
-        <div className="fixed bottom-6 left-0 right-0 max-w-md mx-auto px-4 z-20 pointer-events-none">
+        <div className="shrink-0 px-4 pb-4 pt-2 bg-white">
           <div className="flex justify-center">
             <button
               onClick={handleVoiceOrder}
-              className={`pointer-events-auto w-20 h-20 rounded-full border-4 border-white shadow-lg flex items-center justify-center text-white transition-colors ${
+              className={`w-20 h-20 rounded-full border-4 border-white shadow-lg flex items-center justify-center text-white transition-colors ${
                 isListening
                   ? 'bg-red-600 active:bg-red-700 animate-pulse'
                   : 'bg-orange-600 active:bg-orange-700'
@@ -771,7 +793,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
           </div>
         </div>
       )}
-
+  
       {/* Quick Sale Modal */}
       {quickSaleItem && (
         <QuickSale

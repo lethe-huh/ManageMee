@@ -53,9 +53,9 @@ export default function DailyPrepForecast({ onViewDetails, recommendations }: Da
           <TrendingUp size={18} strokeWidth={2.5} className="text-orange-600" />
         </div>
         <h2 className="text-base font-black text-gray-900">Demand Forecast</h2>
-        <span className="ml-auto text-xs font-bold text-gray-400 uppercase tracking-wide">AI · Today</span>
+        {/* <span className="ml-auto text-xs font-bold text-gray-400 uppercase tracking-wide">AI · Today</span> */}
       </div>
-      <p className="text-gray-400 text-xs font-medium mb-4 ml-9">
+      <p className="text-gray-400 text-sm font-medium mb-4 ml-9">
         {totalPortions} total portions recommended
       </p>
 
