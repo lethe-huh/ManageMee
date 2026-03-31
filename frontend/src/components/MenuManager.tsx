@@ -531,7 +531,7 @@ export default function MenuManager({ initialSubTab = 'all', onFormStateChange, 
       <div className="shrink-0 p-4 pb-0">
         {activeTab === 'work' && (
           <div className="bg-white border-b-2 border-gray-200 p-4 flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Log Sales</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Track Order</h1>
             <button
               onClick={handleExitToHome}
               className="text-gray-600 active:bg-gray-100 p-2 rounded-lg transition-colors"

@@ -425,7 +425,7 @@ console.log(
           className="flex-1 bg-green-600 text-white rounded-xl p-4 font-bold text-lg flex items-center justify-center gap-2 active:bg-green-600 transition-colors shadow-lg border-2 border-green-600"
         >
           <Zap size={22} strokeWidth={2.5} />
-          Log Sale
+          Track Order
         </button>
 
         <button
